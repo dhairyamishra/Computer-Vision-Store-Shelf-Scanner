@@ -24,6 +24,7 @@ export type StoredMedia = {
 export interface MediaStore {
   saveSourceVideo(input: SaveSourceVideoInput): Promise<StoredMedia>;
   resolveMediaPath(mediaPath: string): Promise<string>;
+  createAuditFrameDirectory(auditId: string): Promise<string>;
 }
 
 export class MediaStoreError extends Error {
@@ -101,5 +102,21 @@ export class LocalMediaStore implements MediaStore {
     }
 
     return resolvedPath;
+  }
+
+  async createAuditFrameDirectory(auditId: string): Promise<string> {
+    if (!/^[a-zA-Z0-9-]+$/.test(auditId)) {
+      throw new MediaStoreError(
+        "Audit ID contains unsupported characters.",
+        "MEDIA_PATH_INVALID",
+      );
+    }
+    const relativeDirectory = `audits/${auditId}/frames`;
+    const directory = await this.resolveMediaPath(
+      `${relativeDirectory}/placeholder.tmp`,
+    );
+    const frameDirectory = resolve(directory, "..");
+    await mkdir(frameDirectory, { recursive: true });
+    return frameDirectory;
   }
 }

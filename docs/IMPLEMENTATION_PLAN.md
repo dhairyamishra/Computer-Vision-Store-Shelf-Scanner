@@ -2,7 +2,7 @@
 
 ## Document status
 
-- Status: implementation in progress — Phase 1 complete
+- Status: implementation in progress — Phase 2 complete
 - Primary branch: `main`
 - Default AI provider: xAI Grok
 - Runtime strategy: TypeScript end to end
@@ -675,31 +675,33 @@ Target: 55–65 minutes
 
 Tasks:
 
-- [ ] Create the Fastify server and health route.
-- [ ] Implement account-list and audit-status routes.
-- [ ] Implement multipart audit creation with account validation.
-- [ ] Validate upload size, duration, file type, and generated path.
-- [ ] Integrate FFmpeg/ffprobe with a configurable binary override.
-- [ ] Extract timestamped candidate frames from a test video.
-- [ ] Add a basic frame selector with temporal coverage and a fixed cap.
-- [ ] Implement the fixture `ShelfReasoner`.
-- [ ] Orchestrate upload -> frames -> fixture analysis -> validation -> persistence.
-- [ ] Expose completed audit JSON through the API.
-- [ ] Record stage timing and safe failures.
+- [x] Create the Fastify server and health route.
+- [x] Implement account-list and audit-status routes.
+- [x] Implement multipart audit creation with account validation.
+- [x] Validate upload size, duration, file type, and generated path.
+- [x] Integrate FFmpeg/ffprobe with a configurable binary override.
+- [x] Extract timestamped candidate frames from a test video.
+- [x] Add a basic frame selector with temporal coverage and a fixed cap.
+- [x] Implement the fixture `ShelfReasoner`.
+- [x] Orchestrate upload -> frames -> fixture analysis -> validation -> persistence.
+- [x] Expose completed audit JSON through the API.
+- [x] Record stage timing and safe failures.
 
 Test gate:
 
-- [ ] A committed tiny video fixture produces timestamped frames.
-- [ ] Rotated video metadata is handled correctly or produces a documented warning.
-- [ ] Invalid and oversized uploads fail with stable error codes.
-- [ ] The fixture vertical slice persists a schema-valid audit.
-- [ ] A failed stage leaves the audit in `failed`, not an intermediate state.
-- [ ] Fastify route integration tests pass.
-- [ ] `npm run check` passes.
+- [x] A committed tiny video fixture produces timestamped frames.
+- [x] Rotated video metadata is handled correctly or produces a documented warning.
+- [x] Invalid and oversized uploads fail with stable error codes.
+- [x] The fixture vertical slice persists a schema-valid audit.
+- [x] A failed stage leaves the audit in `failed`, not an intermediate state.
+- [x] Fastify route integration tests pass.
+- [x] `npm run check` passes.
 
 Exit criteria:
 
 - A local video can travel through the entire pipeline and produce a persisted fixture audit before paid inference is introduced.
+
+Completed 2026-07-15: the committed three-second fixture produces three timestamped frames through bundled FFmpeg. `npm.cmd run check` passed with 13 tests, and a local `GET /health` smoke check passed. Rotation metadata produces a warning while FFmpeg autorotation remains enabled.
 
 ### Phase 3 — Quality-aware frame selection and local perception
 

@@ -1,4 +1,5 @@
 import type { PGlite } from "@electric-sql/pglite";
+import { ShelfAuditSchema, type ShelfAudit } from "@shelf-audit/contracts";
 
 import type { AuditRunStatus } from "./types.js";
 import {
@@ -34,11 +35,13 @@ export type AuditRun = {
   model: string;
   errorCode: string | null;
   errorMessage: string | null;
+  stageLatencies: Record<string, number>;
+  finalAudit: ShelfAudit | null;
 };
 
 export type CreateAuditInput = Omit<
   AuditRun,
-  "status" | "errorCode" | "errorMessage"
+  "status" | "errorCode" | "errorMessage" | "stageLatencies" | "finalAudit"
 >;
 
 export interface AuditRepository {
@@ -51,6 +54,15 @@ export interface AuditRepository {
     nextStatus: AuditRunStatus,
     failure?: { errorCode: string; errorMessage: string },
   ): Promise<AuditRun>;
+  completeAudit(
+    auditId: string,
+    finalAudit: ShelfAudit,
+    stageLatencies: Record<string, number>,
+  ): Promise<AuditRun>;
+  recordStageLatencies(
+    auditId: string,
+    stageLatencies: Record<string, number>,
+  ): Promise<void>;
   recoverAbandonedAudits(): Promise<number>;
 }
 
@@ -82,6 +94,8 @@ type AuditRow = {
   model: string;
   error_code: string | null;
   error_message: string | null;
+  stage_latencies: Record<string, number> | string;
+  final_audit: ShelfAudit | string | null;
 };
 
 export class AuditRepositoryError extends Error {
@@ -104,6 +118,18 @@ function toAuditRun(row: AuditRow): AuditRun {
     model: row.model,
     errorCode: row.error_code,
     errorMessage: row.error_message,
+    stageLatencies:
+      typeof row.stage_latencies === "string"
+        ? (JSON.parse(row.stage_latencies) as Record<string, number>)
+        : row.stage_latencies,
+    finalAudit:
+      row.final_audit === null
+        ? null
+        : ShelfAuditSchema.parse(
+            typeof row.final_audit === "string"
+              ? JSON.parse(row.final_audit)
+              : row.final_audit,
+          ),
   };
 }
 
@@ -152,7 +178,7 @@ export class PGliteAuditRepository implements AuditRepository {
     const result = await this.database.query<AuditRow>(
       `INSERT INTO audit_runs (id, account_id, status, source_video_path, provider, model)
        VALUES ($1, $2, 'created', $3, $4, $5)
-       RETURNING id, account_id, status, source_video_path, provider, model, error_code, error_message`,
+       RETURNING id, account_id, status, source_video_path, provider, model, error_code, error_message, stage_latencies, final_audit`,
       [
         input.id,
         input.accountId,
@@ -166,7 +192,7 @@ export class PGliteAuditRepository implements AuditRepository {
 
   async getAudit(auditId: string): Promise<AuditRun> {
     const result = await this.database.query<AuditRow>(
-      `SELECT id, account_id, status, source_video_path, provider, model, error_code, error_message
+      `SELECT id, account_id, status, source_video_path, provider, model, error_code, error_message, stage_latencies, final_audit
        FROM audit_runs WHERE id = $1`,
       [auditId],
     );
@@ -197,7 +223,7 @@ export class PGliteAuditRepository implements AuditRepository {
       `UPDATE audit_runs
        SET status = $2, error_code = $3, error_message = $4, updated_at = CURRENT_TIMESTAMP
        WHERE id = $1
-       RETURNING id, account_id, status, source_video_path, provider, model, error_code, error_message`,
+       RETURNING id, account_id, status, source_video_path, provider, model, error_code, error_message, stage_latencies, final_audit`,
       [
         auditId,
         nextStatus,
@@ -206,6 +232,40 @@ export class PGliteAuditRepository implements AuditRepository {
       ],
     );
     return toAuditRun(result.rows[0]);
+  }
+
+  async completeAudit(
+    auditId: string,
+    finalAudit: ShelfAudit,
+    stageLatencies: Record<string, number>,
+  ): Promise<AuditRun> {
+    const current = await this.getAudit(auditId);
+    if (!isAllowedAuditTransition(current.status, "completed")) {
+      throw new AuditRepositoryError(
+        `Cannot complete audit '${auditId}' from '${current.status}'.`,
+        "INVALID_AUDIT_TRANSITION",
+      );
+    }
+    const validatedAudit = ShelfAuditSchema.parse(finalAudit);
+    const result = await this.database.query<AuditRow>(
+      `UPDATE audit_runs
+       SET status = 'completed', final_audit = $2::jsonb, stage_latencies = $3::jsonb,
+           error_code = NULL, error_message = NULL, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1
+       RETURNING id, account_id, status, source_video_path, provider, model, error_code, error_message, stage_latencies, final_audit`,
+      [auditId, JSON.stringify(validatedAudit), JSON.stringify(stageLatencies)],
+    );
+    return toAuditRun(result.rows[0]);
+  }
+
+  async recordStageLatencies(
+    auditId: string,
+    stageLatencies: Record<string, number>,
+  ): Promise<void> {
+    await this.database.query(
+      "UPDATE audit_runs SET stage_latencies = $2::jsonb, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+      [auditId, JSON.stringify(stageLatencies)],
+    );
   }
 
   async recoverAbandonedAudits(): Promise<number> {
