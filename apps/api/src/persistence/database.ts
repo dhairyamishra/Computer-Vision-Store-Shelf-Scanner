@@ -6,9 +6,9 @@ import { fileURLToPath } from "node:url";
 export type DatabaseOptions =
   { mode: "memory"; directory?: never } | { directory: string; mode?: never };
 
-export const DEFAULT_DATA_DIRECTORY = fileURLToPath(
-  new URL("../../../../data", import.meta.url),
-);
+export const DEFAULT_DATA_DIRECTORY =
+  process.env.SHELF_AUDIT_DATA_DIRECTORY ??
+  fileURLToPath(new URL("../../../../data", import.meta.url));
 export const DEFAULT_DATABASE_DIRECTORY = join(
   DEFAULT_DATA_DIRECTORY,
   "pgdata",

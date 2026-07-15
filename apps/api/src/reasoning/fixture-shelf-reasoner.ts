@@ -4,11 +4,16 @@ import {
   type ShelfAudit,
 } from "@shelf-audit/contracts";
 
-import type { Account } from "../persistence/audit-repository.js";
+import type {
+  Account,
+  AccountAssortmentItem,
+} from "../persistence/audit-repository.js";
 import type { CandidateFrame, VideoMetadata } from "../video/types.js";
 import type { DetectorRun } from "../perception/local-detector.js";
 
 export interface ShelfReasoner {
+  readonly provider?: string;
+  readonly model?: string;
   analyze(input: {
     auditId: string;
     account: Account;
@@ -17,10 +22,13 @@ export interface ShelfReasoner {
     frames: CandidateFrame[];
     qualityWarnings?: string[];
     detector?: Pick<DetectorRun, "available" | "version" | "warnings">;
+    assortment?: AccountAssortmentItem[];
   }): Promise<ShelfAudit>;
 }
 
 export class FixtureShelfReasoner implements ShelfReasoner {
+  readonly provider = "fixture";
+  readonly model = "deterministic";
   async analyze(input: {
     auditId: string;
     account: Account;

@@ -12,7 +12,7 @@
   ],
   "scripts": {
     "build": "npm run typecheck",
-    "dev": "npm run dev --workspaces --if-present",
+    "dev": "npm.cmd --workspace @shelf-audit/api run dev",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",

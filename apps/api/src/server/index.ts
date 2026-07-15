@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import Fastify, { type FastifyInstance } from "fastify";
 import multipart from "@fastify/multipart";
+import sharp from "sharp";
 
 import {
   DEFAULT_DATA_DIRECTORY,
@@ -20,6 +21,8 @@ import {
 } from "../persistence/index.js";
 import {
   FixtureShelfReasoner,
+  GrokShelfReasoner,
+  ReasoningError,
   type ShelfReasoner,
 } from "../reasoning/index.js";
 import {
@@ -28,6 +31,7 @@ import {
   selectQualityAwareFrames,
   type VideoProcessor,
 } from "../video/index.js";
+import type { CandidateFrame, VideoMetadata } from "../video/types.js";
 import {
   createDetectionCrops,
   DEFAULT_DETECTOR_MODEL,
@@ -36,6 +40,7 @@ import {
   TransformersLocalDetector,
   type LocalDetector,
 } from "../perception/index.js";
+import { SHELF_AUDIT_UI } from "./ui.js";
 
 type ErrorPayload = {
   error: { code: string; message: string };
@@ -70,6 +75,39 @@ async function findAccount(repository: AuditRepository, accountId: string) {
 
 function stageDurations(startedAt: number): Record<string, number> {
   return { totalMs: Math.max(0, Date.now() - startedAt) };
+}
+
+function isSupportedImage(mimeType: string): boolean {
+  return ["image/jpeg", "image/png", "image/webp"].includes(mimeType);
+}
+
+async function extractImageFrame(
+  sourcePath: string,
+  outputDirectory: string,
+): Promise<{ metadata: VideoMetadata; frames: CandidateFrame[] }> {
+  const image = sharp(sourcePath).rotate();
+  const sourceMetadata = await image.metadata();
+  if (!sourceMetadata.width || !sourceMetadata.height) {
+    throw new VideoProcessingError(
+      "Upload is not a usable image.",
+      "VIDEO_INVALID",
+    );
+  }
+
+  const fileName = "frame-000000000.png";
+  const filePath = join(outputDirectory, fileName);
+  await image.png().toFile(filePath);
+  return {
+    metadata: {
+      durationMs: 1_000,
+      width: sourceMetadata.width,
+      height: sourceMetadata.height,
+      frameRate: null,
+      rotationDegrees: 0,
+      warnings: ["A still image was analyzed as one evidence frame."],
+    },
+    frames: [{ frameId: "frame-1", timestampMs: 0, fileName, filePath }],
+  };
 }
 
 async function createDependencies(options: CreateApiServerOptions): Promise<{
@@ -114,7 +152,14 @@ export async function createApiServer(
       ffmpegPath: process.env.FFMPEG_PATH,
       ffprobePath: process.env.FFPROBE_PATH,
     });
-  const reasoner = options.reasoner ?? new FixtureShelfReasoner();
+  const reasoner =
+    options.reasoner ??
+    (options.mode === "test"
+      ? new FixtureShelfReasoner()
+      : new GrokShelfReasoner({
+          apiKey: process.env.XAI_API_KEY,
+          model: process.env.XAI_MODEL,
+        }));
   const localDetector =
     options.localDetector ??
     (options.mode === "test"
@@ -142,6 +187,10 @@ export async function createApiServer(
   });
 
   server.get("/health", async () => ({ status: "ok" }));
+
+  server.get("/", async (_request, reply) =>
+    reply.type("text/html; charset=utf-8").send(SHELF_AUDIT_UI),
+  );
 
   server.get("/accounts", async () => ({
     accounts: await dependencies.repository.listAccounts(),
@@ -182,10 +231,12 @@ export async function createApiServer(
           errorPayload("UPLOAD_TOO_LARGE", "Video exceeds the upload limit."),
         );
     }
-    if (!upload || upload.fieldname !== "video") {
+    if (!upload || !["video", "media"].includes(upload.fieldname)) {
       return reply
         .status(400)
-        .send(errorPayload("VIDEO_REQUIRED", "A video field is required."));
+        .send(
+          errorPayload("MEDIA_REQUIRED", "A photo or video field is required."),
+        );
     }
 
     let bytes: Buffer;
@@ -195,14 +246,14 @@ export async function createApiServer(
       return reply
         .status(413)
         .send(
-          errorPayload("UPLOAD_TOO_LARGE", "Video exceeds the upload limit."),
+          errorPayload("UPLOAD_TOO_LARGE", "Media exceeds the upload limit."),
         );
     }
     if (upload.file.truncated || bytes.byteLength > maxUploadBytes) {
       return reply
         .status(413)
         .send(
-          errorPayload("UPLOAD_TOO_LARGE", "Video exceeds the upload limit."),
+          errorPayload("UPLOAD_TOO_LARGE", "Media exceeds the upload limit."),
         );
     }
 
@@ -242,7 +293,7 @@ export async function createApiServer(
       return reply
         .status(415)
         .send(
-          errorPayload("VIDEO_TYPE_UNSUPPORTED", "Unsupported video type."),
+          errorPayload("MEDIA_TYPE_UNSUPPORTED", "Unsupported media type."),
         );
     }
 
@@ -250,8 +301,8 @@ export async function createApiServer(
       id: randomUUID(),
       accountId: account.id,
       sourceVideoPath: storedVideo.mediaPath,
-      provider: "fixture",
-      model: "deterministic",
+      provider: reasoner.provider ?? "unknown",
+      model: reasoner.model ?? "unknown",
     });
     const startedAt = Date.now();
 
@@ -265,8 +316,11 @@ export async function createApiServer(
       const sourcePath = await dependencies.mediaStore.resolveMediaPath(
         storedVideo.mediaPath,
       );
-      const metadata = await videoProcessor.inspect(sourcePath);
-      if (metadata.durationMs > maxDurationMs) {
+      const isImage = isSupportedImage(upload.mimetype);
+      const inspectedMetadata = isImage
+        ? null
+        : await videoProcessor.inspect(sourcePath);
+      if (inspectedMetadata && inspectedMetadata.durationMs > maxDurationMs) {
         throw new VideoProcessingError(
           `Video duration exceeds the ${maxDurationMs}-ms limit.`,
           "VIDEO_TOO_LONG",
@@ -274,9 +328,14 @@ export async function createApiServer(
       }
       const frameDirectory =
         await dependencies.mediaStore.createAuditFrameDirectory(audit.id);
-      const frames = await videoProcessor.extractFrames(sourcePath, {
-        outputDirectory: frameDirectory,
-      });
+      const { metadata, frames } = isImage
+        ? await extractImageFrame(sourcePath, frameDirectory)
+        : {
+            metadata: inspectedMetadata as VideoMetadata,
+            frames: await videoProcessor.extractFrames(sourcePath, {
+              outputDirectory: frameDirectory,
+            }),
+          };
       await dependencies.repository.transitionAudit(
         audit.id,
         "selecting_frames",
@@ -316,6 +375,9 @@ export async function createApiServer(
       const finalAudit = await reasoner.analyze({
         auditId: audit.id,
         account,
+        assortment: await dependencies.repository.listAccountAssortment(
+          account.id,
+        ),
         sourceVideoPath: storedVideo.mediaPath,
         metadata,
         frames: selectedFrames,
@@ -338,7 +400,7 @@ export async function createApiServer(
         .send({ auditId: completed.id, status: completed.status });
     } catch (error) {
       const code =
-        error instanceof VideoProcessingError
+        error instanceof VideoProcessingError || error instanceof ReasoningError
           ? error.code
           : "VIDEO_PROCESSING_FAILED";
       const message =
@@ -356,7 +418,11 @@ export async function createApiServer(
         // Preserve the original processing error if a secondary persistence operation fails.
       }
       const statusCode =
-        code === "VIDEO_TOO_LONG" || code === "VIDEO_INVALID" ? 422 : 500;
+        code === "VIDEO_TOO_LONG" || code === "VIDEO_INVALID"
+          ? 422
+          : code === "AI_PROVIDER_NOT_CONFIGURED"
+            ? 503
+            : 500;
       return reply
         .status(statusCode)
         .send(errorPayload(code, message, audit.id));

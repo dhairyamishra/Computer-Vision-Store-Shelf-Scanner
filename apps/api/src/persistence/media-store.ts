@@ -2,10 +2,13 @@ import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { basename, extname, isAbsolute, relative, resolve } from "node:path";
 
-const videoExtensionsByMimeType: Readonly<Record<string, string>> = {
+const mediaExtensionsByMimeType: Readonly<Record<string, string>> = {
   "video/mp4": ".mp4",
   "video/quicktime": ".mov",
   "video/webm": ".webm",
+  "image/jpeg": ".jpg",
+  "image/png": ".png",
+  "image/webp": ".webp",
 };
 
 export type SaveSourceVideoInput = {
@@ -48,16 +51,16 @@ export class LocalMediaStore implements MediaStore {
   }
 
   async saveSourceVideo(input: SaveSourceVideoInput): Promise<StoredMedia> {
-    const extension = videoExtensionsByMimeType[input.mimeType];
+    const extension = mediaExtensionsByMimeType[input.mimeType];
     if (!extension) {
       throw new MediaStoreError(
-        `Unsupported video MIME type '${input.mimeType}'.`,
+        `Unsupported media MIME type '${input.mimeType}'.`,
         "MEDIA_TYPE_UNSUPPORTED",
       );
     }
     if (input.bytes.byteLength > this.options.maxBytes) {
       throw new MediaStoreError(
-        `Video is larger than the ${this.options.maxBytes}-byte limit.`,
+        `Media is larger than the ${this.options.maxBytes}-byte limit.`,
         "MEDIA_TOO_LARGE",
       );
     }
