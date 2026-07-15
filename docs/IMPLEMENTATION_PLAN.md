@@ -2,7 +2,7 @@
 
 ## Document status
 
-- Status: implementation in progress — Phase 2 complete
+- Status: implementation in progress — Phase 3 complete
 - Primary branch: `main`
 - Default AI provider: xAI Grok
 - Runtime strategy: TypeScript end to end
@@ -709,31 +709,33 @@ Target: 35–45 minutes
 
 Tasks:
 
-- [ ] Use Sharp to calculate frame sharpness, brightness, clipping, and entropy signals.
-- [ ] Add near-duplicate rejection and temporal-diversity rules.
-- [ ] Persist frame-selection scores and reasons.
-- [ ] Implement `LocalDetector`.
-- [ ] Integrate quantized `Xenova/detr-resnet-50` through Transformers.js.
-- [ ] Cache the model outside source-controlled paths.
-- [ ] Detect relevant generic objects and normalize boxes.
-- [ ] Generate a limited set of useful crops without discarding overview context.
-- [ ] Record detector version and availability.
-- [ ] Degrade gracefully when detector initialization fails.
+- [x] Use Sharp to calculate frame sharpness, brightness, clipping, and entropy signals.
+- [x] Add near-duplicate rejection and temporal-diversity rules.
+- [x] Persist frame-selection scores and reasons.
+- [x] Implement `LocalDetector`.
+- [x] Integrate quantized `Xenova/detr-resnet-50` through Transformers.js.
+- [x] Cache the model outside source-controlled paths.
+- [x] Detect relevant generic objects and normalize boxes.
+- [x] Generate a limited set of useful crops without discarding overview context.
+- [x] Record detector version and availability.
+- [x] Degrade gracefully when detector initialization fails.
 
 Test gate:
 
-- [ ] Blurred/dark synthetic fixtures rank below clear fixtures.
-- [ ] Near-duplicate frames are reduced while beginning/middle/end coverage remains.
-- [ ] Bounding boxes are normalized and clamped.
-- [ ] Detector output never maps directly to a catalog SKU.
-- [ ] One opt-in local detector smoke test runs on a shelf frame.
-- [ ] Pipeline succeeds with a recorded warning if the detector is unavailable.
-- [ ] `npm run check` passes.
+- [x] Blurred/dark synthetic fixtures rank below clear fixtures.
+- [x] Near-duplicate frames are reduced while beginning/middle/end coverage remains.
+- [x] Bounding boxes are normalized and clamped.
+- [x] Detector output never maps directly to a catalog SKU.
+- [x] One opt-in local detector smoke test runs on a shelf frame.
+- [x] Pipeline succeeds with a recorded warning if the detector is unavailable.
+- [x] `npm run check` passes.
 
 Exit criteria:
 
 - The application uses a real open-source vision model as a supporting signal.
 - Frame selection is explainable and robust enough for messy phone video.
+
+Completed 2026-07-15: Sharp-based deterministic quality scoring now selects the best unique frame in each temporal segment, preserving overview coverage. Quantized `Xenova/detr-resnet-50` runs through Transformers.js as an optional generic-object signal, cached under ignored `data/model-cache`. Selection/detector metadata is persisted with the audit, failures become a warning rather than a failed audit, and a maximum of four detector crops are retained beside the overview frames. `npm.cmd run check` passed with 17 tests, and `npm.cmd run test:detector:smoke` passed against the extracted fixture frame.
 
 ### Phase 4 — Grok extraction and provider abstraction
 

@@ -36,12 +36,18 @@ export type AuditRun = {
   errorCode: string | null;
   errorMessage: string | null;
   stageLatencies: Record<string, number>;
+  processingMetadata: Record<string, unknown>;
   finalAudit: ShelfAudit | null;
 };
 
 export type CreateAuditInput = Omit<
   AuditRun,
-  "status" | "errorCode" | "errorMessage" | "stageLatencies" | "finalAudit"
+  | "status"
+  | "errorCode"
+  | "errorMessage"
+  | "stageLatencies"
+  | "processingMetadata"
+  | "finalAudit"
 >;
 
 export interface AuditRepository {
@@ -62,6 +68,10 @@ export interface AuditRepository {
   recordStageLatencies(
     auditId: string,
     stageLatencies: Record<string, number>,
+  ): Promise<void>;
+  recordProcessingMetadata(
+    auditId: string,
+    processingMetadata: Record<string, unknown>,
   ): Promise<void>;
   recoverAbandonedAudits(): Promise<number>;
 }
@@ -95,6 +105,7 @@ type AuditRow = {
   error_code: string | null;
   error_message: string | null;
   stage_latencies: Record<string, number> | string;
+  processing_metadata: Record<string, unknown> | string;
   final_audit: ShelfAudit | string | null;
 };
 
@@ -122,6 +133,10 @@ function toAuditRun(row: AuditRow): AuditRun {
       typeof row.stage_latencies === "string"
         ? (JSON.parse(row.stage_latencies) as Record<string, number>)
         : row.stage_latencies,
+    processingMetadata:
+      typeof row.processing_metadata === "string"
+        ? (JSON.parse(row.processing_metadata) as Record<string, unknown>)
+        : row.processing_metadata,
     finalAudit:
       row.final_audit === null
         ? null
@@ -178,7 +193,7 @@ export class PGliteAuditRepository implements AuditRepository {
     const result = await this.database.query<AuditRow>(
       `INSERT INTO audit_runs (id, account_id, status, source_video_path, provider, model)
        VALUES ($1, $2, 'created', $3, $4, $5)
-       RETURNING id, account_id, status, source_video_path, provider, model, error_code, error_message, stage_latencies, final_audit`,
+       RETURNING id, account_id, status, source_video_path, provider, model, error_code, error_message, stage_latencies, processing_metadata, final_audit`,
       [
         input.id,
         input.accountId,
@@ -192,7 +207,7 @@ export class PGliteAuditRepository implements AuditRepository {
 
   async getAudit(auditId: string): Promise<AuditRun> {
     const result = await this.database.query<AuditRow>(
-      `SELECT id, account_id, status, source_video_path, provider, model, error_code, error_message, stage_latencies, final_audit
+      `SELECT id, account_id, status, source_video_path, provider, model, error_code, error_message, stage_latencies, processing_metadata, final_audit
        FROM audit_runs WHERE id = $1`,
       [auditId],
     );
@@ -223,7 +238,7 @@ export class PGliteAuditRepository implements AuditRepository {
       `UPDATE audit_runs
        SET status = $2, error_code = $3, error_message = $4, updated_at = CURRENT_TIMESTAMP
        WHERE id = $1
-       RETURNING id, account_id, status, source_video_path, provider, model, error_code, error_message, stage_latencies, final_audit`,
+       RETURNING id, account_id, status, source_video_path, provider, model, error_code, error_message, stage_latencies, processing_metadata, final_audit`,
       [
         auditId,
         nextStatus,
@@ -252,7 +267,7 @@ export class PGliteAuditRepository implements AuditRepository {
        SET status = 'completed', final_audit = $2::jsonb, stage_latencies = $3::jsonb,
            error_code = NULL, error_message = NULL, updated_at = CURRENT_TIMESTAMP
        WHERE id = $1
-       RETURNING id, account_id, status, source_video_path, provider, model, error_code, error_message, stage_latencies, final_audit`,
+       RETURNING id, account_id, status, source_video_path, provider, model, error_code, error_message, stage_latencies, processing_metadata, final_audit`,
       [auditId, JSON.stringify(validatedAudit), JSON.stringify(stageLatencies)],
     );
     return toAuditRun(result.rows[0]);
@@ -265,6 +280,16 @@ export class PGliteAuditRepository implements AuditRepository {
     await this.database.query(
       "UPDATE audit_runs SET stage_latencies = $2::jsonb, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
       [auditId, JSON.stringify(stageLatencies)],
+    );
+  }
+
+  async recordProcessingMetadata(
+    auditId: string,
+    processingMetadata: Record<string, unknown>,
+  ): Promise<void> {
+    await this.database.query(
+      "UPDATE audit_runs SET processing_metadata = $2::jsonb, updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+      [auditId, JSON.stringify(processingMetadata)],
     );
   }
 

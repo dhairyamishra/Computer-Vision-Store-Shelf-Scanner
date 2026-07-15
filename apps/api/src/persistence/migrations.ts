@@ -57,6 +57,13 @@ const migrations = [
       CREATE INDEX IF NOT EXISTS audit_runs_status_idx ON audit_runs(status);
     `,
   },
+  {
+    id: "002_processing_metadata",
+    sql: `
+      ALTER TABLE audit_runs
+      ADD COLUMN IF NOT EXISTS processing_metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
+    `,
+  },
 ] as const;
 
 export async function migrateDatabase(database: PGlite): Promise<void> {

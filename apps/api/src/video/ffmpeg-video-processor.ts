@@ -198,7 +198,12 @@ export class FfmpegVideoProcessor implements VideoProcessor {
           join(options.outputDirectory, temporaryName),
           join(options.outputDirectory, fileName),
         );
-        return { frameId: `frame-${index + 1}`, timestampMs, fileName };
+        return {
+          frameId: `frame-${index + 1}`,
+          timestampMs,
+          fileName,
+          filePath: join(options.outputDirectory, fileName),
+        };
       }),
     );
   }

@@ -11,6 +11,8 @@ export type CandidateFrame = {
   frameId: string;
   timestampMs: number;
   fileName: string;
+  /** Absolute local path; never expose this value to API consumers. */
+  filePath?: string;
 };
 
 export interface VideoProcessor {

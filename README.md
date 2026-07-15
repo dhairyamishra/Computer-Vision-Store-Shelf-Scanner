@@ -4,7 +4,7 @@ A mobile vision AI pipeline that reads retail shelves and outputs structured JSO
 
 ## Project status
 
-Phases 0–2 are complete: shared contracts, local persistence/media storage, and a deterministic video-to-audit API vertical slice. The approved architecture, phased work breakdown, test gates, risks, and progress tracker live in the [implementation plan](docs/IMPLEMENTATION_PLAN.md).
+Phases 0–3 are complete: shared contracts, local persistence/media storage, a deterministic video-to-audit API vertical slice, and quality-aware local perception. The approved architecture, phased work breakdown, test gates, risks, and progress tracker live in the [implementation plan](docs/IMPLEMENTATION_PLAN.md).
 
 ## Development baseline
 
@@ -18,3 +18,5 @@ npm.cmd --workspace @shelf-audit/api run dev
 ```
 
 The API listens on `http://127.0.0.1:3000`; `GET /health` returns `{ "status": "ok" }`. Runtime data is local and ignored under `data/`. FFmpeg and ffprobe are bundled for this prototype; set `FFMPEG_PATH` and `FFPROBE_PATH` to override either executable.
+
+The local detector is optional supporting evidence: it uses quantized `Xenova/detr-resnet-50` through Transformers.js, caches its first-run download in ignored `data/model-cache`, and never assigns a catalog SKU. Run its opt-in smoke test with `npm.cmd run test:detector:smoke`.

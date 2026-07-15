@@ -6,6 +6,7 @@ import {
 
 import type { Account } from "../persistence/audit-repository.js";
 import type { CandidateFrame, VideoMetadata } from "../video/types.js";
+import type { DetectorRun } from "../perception/local-detector.js";
 
 export interface ShelfReasoner {
   analyze(input: {
@@ -14,6 +15,8 @@ export interface ShelfReasoner {
     sourceVideoPath: string;
     metadata: VideoMetadata;
     frames: CandidateFrame[];
+    qualityWarnings?: string[];
+    detector?: Pick<DetectorRun, "available" | "version" | "warnings">;
   }): Promise<ShelfAudit>;
 }
 
@@ -24,6 +27,8 @@ export class FixtureShelfReasoner implements ShelfReasoner {
     sourceVideoPath: string;
     metadata: VideoMetadata;
     frames: CandidateFrame[];
+    qualityWarnings?: string[];
+    detector?: Pick<DetectorRun, "available" | "version" | "warnings">;
   }): Promise<ShelfAudit> {
     return ShelfAuditSchema.parse({
       auditId: input.auditId,
@@ -38,6 +43,8 @@ export class FixtureShelfReasoner implements ShelfReasoner {
         status: input.metadata.warnings.length > 0 ? "degraded" : "usable",
         warnings: [
           ...input.metadata.warnings,
+          ...(input.qualityWarnings ?? []),
+          ...(input.detector?.warnings ?? []),
           `Fixture analysis used ${input.frames.length} representative frame(s).`,
         ],
       },
@@ -49,6 +56,7 @@ export class FixtureShelfReasoner implements ShelfReasoner {
         pipelineVersion: "fixture-v1",
         provider: "fixture",
         model: "deterministic",
+        ...(input.detector ? { detectorVersion: input.detector.version } : {}),
       },
     });
   }

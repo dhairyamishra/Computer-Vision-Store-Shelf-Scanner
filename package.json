@@ -17,6 +17,7 @@
     "format:check": "prettier --check .",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:detector:smoke": "vitest run apps/api/test/local-detector.smoke.test.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p packages/contracts/tsconfig.json && tsc --noEmit -p apps/api/tsconfig.json && tsc --noEmit -p apps/mobile/tsconfig.json",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run test"
