@@ -203,6 +203,19 @@ cython_debug/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
+# Node / TypeScript workspaces
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.expo/
+
+# Local shelf-audit runtime state
+data/
+.cache/
+.env.*
+!.env.example
+
 # Ruff stuff:
 .ruff_cache/
 
