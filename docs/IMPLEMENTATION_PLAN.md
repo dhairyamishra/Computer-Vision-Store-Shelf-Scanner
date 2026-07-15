@@ -2,7 +2,7 @@
 
 ## Document status
 
-- Status: approved for implementation
+- Status: implementation in progress — Phase 0 complete
 - Primary branch: `main`
 - Default AI provider: xAI Grok
 - Runtime strategy: TypeScript end to end
@@ -166,19 +166,19 @@ Use npm workspaces to avoid requiring another global package manager. A single r
 
 ## 6. Technology choices
 
-| Concern | Choice | Reason |
-| --- | --- | --- |
-| Mobile client | Expo + React Native + TypeScript | Matches the target production stack and supports camera/video workflows. |
-| API | Fastify + TypeScript | Small, testable local server with multipart and schema-friendly routing. |
-| Contracts | Zod | One source for runtime validation, TypeScript types, and JSON Schema generation. |
-| AI abstraction | Vercel AI SDK with direct provider keys | Normalizes multimodal and structured output across xAI, OpenAI, Anthropic, and Google. |
-| Default model | Configurable xAI Grok model, initially `grok-4.5` | Supports image input and structured output; model ID remains configurable. |
-| Local detector | Quantized `Xenova/detr-resnet-50` through `@huggingface/transformers` | Provides generic bottle/object boxes without Python or training. |
-| Video | FFmpeg with a configurable binary path | Reliable frame extraction and metadata inspection. |
-| Image processing | Sharp | Resize, crop, normalize, and compute useful frame statistics in Node. |
-| Persistence | PGlite | Embedded file-backed Postgres without a server or Docker. |
-| Testing | Vitest | Fast unit and integration tests across TypeScript workspaces. |
-| Formatting/linting | Prettier + ESLint | Consistent, automated code-quality checks. |
+| Concern            | Choice                                                                | Reason                                                                                 |
+| ------------------ | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Mobile client      | Expo + React Native + TypeScript                                      | Matches the target production stack and supports camera/video workflows.               |
+| API                | Fastify + TypeScript                                                  | Small, testable local server with multipart and schema-friendly routing.               |
+| Contracts          | Zod                                                                   | One source for runtime validation, TypeScript types, and JSON Schema generation.       |
+| AI abstraction     | Vercel AI SDK with direct provider keys                               | Normalizes multimodal and structured output across xAI, OpenAI, Anthropic, and Google. |
+| Default model      | Configurable xAI Grok model, initially `grok-4.5`                     | Supports image input and structured output; model ID remains configurable.             |
+| Local detector     | Quantized `Xenova/detr-resnet-50` through `@huggingface/transformers` | Provides generic bottle/object boxes without Python or training.                       |
+| Video              | FFmpeg with a configurable binary path                                | Reliable frame extraction and metadata inspection.                                     |
+| Image processing   | Sharp                                                                 | Resize, crop, normalize, and compute useful frame statistics in Node.                  |
+| Persistence        | PGlite                                                                | Embedded file-backed Postgres without a server or Docker.                              |
+| Testing            | Vitest                                                                | Fast unit and integration tests across TypeScript workspaces.                          |
+| Formatting/linting | Prettier + ESLint                                                     | Consistent, automated code-quality checks.                                             |
 
 ## 7. DRY and SOLID boundaries
 
@@ -247,11 +247,7 @@ Coordinates are normalized from 0 to 1 and must be validated before persistence.
 type Claim<T> = {
   value: T | null;
   status:
-    | "observed"
-    | "inferred"
-    | "uncertain"
-    | "not_observable"
-    | "not_applicable";
+    "observed" | "inferred" | "uncertain" | "not_observable" | "not_applicable";
   confidence: number;
   confidenceLevel: "low" | "medium" | "high";
   reason: string;
@@ -615,28 +611,30 @@ Target: 20–30 minutes
 
 Tasks:
 
-- [ ] Rename/use `main` as the active implementation branch.
-- [ ] Initialize npm workspaces for `apps/mobile`, `apps/api`, and `packages/contracts`.
-- [ ] Pin and document a tested Node LTS version.
-- [ ] Configure TypeScript, ESLint, Prettier, and Vitest at the root.
-- [ ] Add root `dev`, `build`, `test`, `typecheck`, `lint`, and `check` commands.
-- [ ] Define shared enums for audit status, observation status, match level, confidence level, and insight type.
-- [ ] Define `EvidenceRef`, `Claim<T>`, `RawShelfAnalysis`, and `ShelfAudit` Zod schemas.
-- [ ] Add valid and invalid contract fixtures.
-- [ ] Add `.env.example` without secrets.
-- [ ] Update `.gitignore` for local media, PGlite data, caches, and environment files.
+- [x] Rename/use `main` as the active implementation branch.
+- [x] Initialize npm workspaces for `apps/mobile`, `apps/api`, and `packages/contracts`.
+- [x] Pin and document a tested Node LTS version.
+- [x] Configure TypeScript, ESLint, Prettier, and Vitest at the root.
+- [x] Add root `dev`, `build`, `test`, `typecheck`, `lint`, and `check` commands.
+- [x] Define shared enums for audit status, observation status, match level, confidence level, and insight type.
+- [x] Define `EvidenceRef`, `Claim<T>`, `RawShelfAnalysis`, and `ShelfAudit` Zod schemas.
+- [x] Add valid and invalid contract fixtures.
+- [x] Add `.env.example` without secrets.
+- [x] Update `.gitignore` for local media, PGlite data, caches, and environment files.
 
 Test gate:
 
-- [ ] Contract schemas accept the canonical valid fixture.
-- [ ] Contract schemas reject invalid confidence, boxes, statuses, and missing required fields.
-- [ ] `npm run check` passes from the repository root.
+- [x] Contract schemas accept the canonical valid fixture.
+- [x] Contract schemas reject invalid confidence, boxes, statuses, and missing required fields.
+- [x] `npm run check` passes from the repository root.
 
 Exit criteria:
 
 - The workspace installs cleanly.
 - Shared contracts compile in both client and API workspaces.
 - No business logic or provider payload type is duplicated.
+
+Completed 2026-07-15: `npm.cmd run check` passed with five contract tests. PowerShell uses `npm.cmd` because this environment blocks `npm.ps1` under its execution policy.
 
 ### Phase 1 — Local persistence, account context, and media storage
 
@@ -953,20 +951,20 @@ Do not cut schema validation, evidence references, conservative OOS logic, deter
 
 ## 17. Risks and mitigations
 
-| Risk | Impact | Mitigation |
-| --- | --- | --- |
-| VLM hallucinates an exact SKU | Incorrect audit and lost trust | Catalog constraint, evidence requirement, match-level downgrades, multi-frame agreement. |
-| Glare/blur removes label detail | Low coverage | Frame-quality warnings, temporal diversity, abstention, manual-review insight. |
-| Similar bottle sizes are confused | Incorrect SKU | Require legible size evidence; otherwise return family match and candidates. |
-| OOS inferred from non-observation | False restock action | Require expected assortment, coverage, and empty-placement evidence. |
-| DETR misses crowded small bottles | Weak local signal | Treat detector as optional supporting evidence, never source of SKU truth. |
-| First detector run is slow | Poor setup experience | Use quantized model, cache it, document first-run download, allow graceful degradation. |
-| Provider changes model ID | Broken setup | Central environment-based model configuration. |
-| Provider schemas differ | Adapter failures | Use common schema subset and always revalidate with Zod. |
-| Physical phone cannot reach localhost | Demo failure | Configurable LAN API URL and early device smoke test. |
-| FFmpeg platform mismatch | Setup failure | Test the chosen binary strategy on the target environment and support `FFMPEG_PATH`. |
-| Video/API failure loses audit | Rep must repeat aisle walk | Save source media before processing and retain retryable failed audits. |
-| Scope exceeds the time box | Incomplete core | Build vertical slice early and follow the cut order above. |
+| Risk                                  | Impact                         | Mitigation                                                                               |
+| ------------------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------- |
+| VLM hallucinates an exact SKU         | Incorrect audit and lost trust | Catalog constraint, evidence requirement, match-level downgrades, multi-frame agreement. |
+| Glare/blur removes label detail       | Low coverage                   | Frame-quality warnings, temporal diversity, abstention, manual-review insight.           |
+| Similar bottle sizes are confused     | Incorrect SKU                  | Require legible size evidence; otherwise return family match and candidates.             |
+| OOS inferred from non-observation     | False restock action           | Require expected assortment, coverage, and empty-placement evidence.                     |
+| DETR misses crowded small bottles     | Weak local signal              | Treat detector as optional supporting evidence, never source of SKU truth.               |
+| First detector run is slow            | Poor setup experience          | Use quantized model, cache it, document first-run download, allow graceful degradation.  |
+| Provider changes model ID             | Broken setup                   | Central environment-based model configuration.                                           |
+| Provider schemas differ               | Adapter failures               | Use common schema subset and always revalidate with Zod.                                 |
+| Physical phone cannot reach localhost | Demo failure                   | Configurable LAN API URL and early device smoke test.                                    |
+| FFmpeg platform mismatch              | Setup failure                  | Test the chosen binary strategy on the target environment and support `FFMPEG_PATH`.     |
+| Video/API failure loses audit         | Rep must repeat aisle walk     | Save source media before processing and retain retryable failed audits.                  |
+| Scope exceeds the time box            | Incomplete core                | Build vertical slice early and follow the cut order above.                               |
 
 ## 18. Security, privacy, and responsible handling
 
@@ -996,16 +994,16 @@ Do not begin a later phase merely to hide a failing earlier gate. Fix the gate o
 
 ## 20. Decision record
 
-| Date | Decision | Reason |
-| --- | --- | --- |
-| 2026-07-15 | Use a TypeScript npm-workspace monorepo. | Aligns with Expo and shares schemas across client, API, providers, persistence, and tests. |
-| 2026-07-15 | Do not start with Python or a hybrid worker. | No training is planned; a second runtime would add setup and contract duplication without enough value. |
-| 2026-07-15 | Use xAI Grok as the default managed reasoner. | Requested default with current multimodal and structured-output support. |
-| 2026-07-15 | Support OpenAI, Claude, and Gemini through the same provider boundary. | Preserves portability without duplicating business logic. |
-| 2026-07-15 | Use quantized DETR from Hugging Face as supporting local perception. | Provides genuine open-source object localization in TypeScript without pretending to solve exact SKU recognition. |
-| 2026-07-15 | Use PGlite and local files by default. | Preserves Postgres semantics and persistence without hosted infrastructure or Docker. |
-| 2026-07-15 | Treat account selection as workflow context. | User selection is more reliable than attempting to infer a store from shelf pixels. |
-| 2026-07-15 | Keep raw observations separate from final business decisions. | Makes grounding, confidence, OOS logic, and insights deterministic and testable. |
+| Date       | Decision                                                               | Reason                                                                                                            |
+| ---------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 2026-07-15 | Use a TypeScript npm-workspace monorepo.                               | Aligns with Expo and shares schemas across client, API, providers, persistence, and tests.                        |
+| 2026-07-15 | Do not start with Python or a hybrid worker.                           | No training is planned; a second runtime would add setup and contract duplication without enough value.           |
+| 2026-07-15 | Use xAI Grok as the default managed reasoner.                          | Requested default with current multimodal and structured-output support.                                          |
+| 2026-07-15 | Support OpenAI, Claude, and Gemini through the same provider boundary. | Preserves portability without duplicating business logic.                                                         |
+| 2026-07-15 | Use quantized DETR from Hugging Face as supporting local perception.   | Provides genuine open-source object localization in TypeScript without pretending to solve exact SKU recognition. |
+| 2026-07-15 | Use PGlite and local files by default.                                 | Preserves Postgres semantics and persistence without hosted infrastructure or Docker.                             |
+| 2026-07-15 | Treat account selection as workflow context.                           | User selection is more reliable than attempting to infer a store from shelf pixels.                               |
+| 2026-07-15 | Keep raw observations separate from final business decisions.          | Makes grounding, confidence, OOS logic, and insights deterministic and testable.                                  |
 
 ## 21. Definition of done
 
