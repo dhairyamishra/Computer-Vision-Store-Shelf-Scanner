@@ -14,6 +14,8 @@ export const AuditRunStatusSchema = z.enum([
   "failed",
 ]);
 
+export type AuditRunStatus = z.infer<typeof AuditRunStatusSchema>;
+
 export const ObservationStatusSchema = z.enum([
   "observed",
   "inferred",

@@ -2,7 +2,7 @@
 
 ## Document status
 
-- Status: implementation in progress — Phase 0 complete
+- Status: implementation in progress — Phase 1 complete
 - Primary branch: `main`
 - Default AI provider: xAI Grok
 - Runtime strategy: TypeScript end to end
@@ -642,30 +642,32 @@ Target: 25–35 minutes
 
 Tasks:
 
-- [ ] Add PGlite with file-backed storage under ignored `data/pgdata`.
-- [ ] Create SQL migrations for accounts, products, account assortments, and audit runs.
-- [ ] Seed one or two demo accounts.
-- [ ] Seed a deliberately small product catalog based on products available for test recording.
-- [ ] Seed expected assortment data required for OOS/compliance examples.
-- [ ] Implement `AuditRepository` and `PGliteAuditRepository`.
-- [ ] Implement `MediaStore` and `LocalMediaStore` with generated filenames.
-- [ ] Persist source-video pointers rather than video blobs.
-- [ ] Add explicit audit-state transition validation.
-- [ ] Add startup handling for abandoned in-progress jobs.
+- [x] Add PGlite with file-backed storage under ignored `data/pgdata`.
+- [x] Create SQL migrations for accounts, products, account assortments, and audit runs.
+- [x] Seed one or two demo accounts.
+- [x] Seed a deliberately small product catalog based on products available for test recording.
+- [x] Seed expected assortment data required for OOS/compliance examples.
+- [x] Implement `AuditRepository` and `PGliteAuditRepository`.
+- [x] Implement `MediaStore` and `LocalMediaStore` with generated filenames.
+- [x] Persist source-video pointers rather than video blobs.
+- [x] Add explicit audit-state transition validation.
+- [x] Add startup handling for abandoned in-progress jobs.
 
 Test gate:
 
-- [ ] Migrations apply to a fresh temporary PGlite database.
-- [ ] Seed data is idempotent.
-- [ ] An audit survives closing and reopening a file-backed test database.
-- [ ] Invalid state transitions are rejected.
-- [ ] Media paths cannot escape the configured data directory.
-- [ ] `npm run check` passes.
+- [x] Migrations apply to a fresh temporary PGlite database.
+- [x] Seed data is idempotent.
+- [x] An audit survives closing and reopening a file-backed test database.
+- [x] Invalid state transitions are rejected.
+- [x] Media paths cannot escape the configured data directory.
+- [x] `npm run check` passes.
 
 Exit criteria:
 
 - Local accounts and catalog records are queryable.
 - A source media pointer and audit status can persist without external infrastructure.
+
+Completed 2026-07-15: PGlite integration tests passed against fresh in-memory and file-backed databases; `npm.cmd run check` passed with nine total tests.
 
 ### Phase 2 — Video ingestion and first vertical slice
 
