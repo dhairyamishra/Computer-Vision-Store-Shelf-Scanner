@@ -1,22 +1,59 @@
 # Computer-Vision-Store-Shelf-Scanner
 
-A mobile vision AI pipeline that reads retail shelves and outputs structured JSON audits.
+A browser-based shelf-audit prototype: upload a shelf photo or short video, have Grok analyze selected evidence frames against an account catalog, and review the persisted structured JSON audit.
 
-## Project status
+## Run locally
 
-Phases 0–3 are complete: shared contracts, local persistence/media storage, a deterministic video-to-audit API vertical slice, and quality-aware local perception. The approved architecture, phased work breakdown, test gates, risks, and progress tracker live in the [implementation plan](docs/IMPLEMENTATION_PLAN.md).
+Requirements:
 
-## Development baseline
+- Node.js 22.16.0 (see [.nvmrc](.nvmrc))
+- An xAI API key for real Grok inference
 
-Phase 0 uses Node.js 22.16.0, pinned in [.nvmrc](.nvmrc). On Windows PowerShell systems that block `npm.ps1`, run commands through `npm.cmd`, for example `npm.cmd test`.
+On Windows PowerShell, use `npm.cmd` rather than `npm`.
 
-## Run the local API
+1. Install dependencies:
 
-```powershell
-npm.cmd install
-npm.cmd run dev
+   ```powershell
+   npm.cmd install --include=dev
+   ```
+
+2. Create a local environment file and set the Grok key:
+
+   ```powershell
+   Copy-Item .env.example .env
+   ```
+
+   In `.env`, set `XAI_API_KEY` and leave `FFMPEG_PATH` / `FFPROBE_PATH` blank to use the bundled binaries. Do not commit `.env`.
+
+3. Start the combined backend and browser UI:
+
+   ```powershell
+   npm.cmd run dev
+   ```
+
+4. Open [http://localhost:3000](http://localhost:3000). Select an account, upload a JPEG/PNG/WebP image or MP4/MOV/WebM video, and submit it for analysis. The completed audit JSON is displayed in the browser.
+
+The health check is available at [http://localhost:3000/health](http://localhost:3000/health) and returns `{ "status": "ok" }`.
+
+### Local runtime data
+
+Audits, uploads, frames, the local PGlite database, and the optional detector cache are stored locally under `data/` and are ignored by Git. To use a separate runtime directory, set `SHELF_AUDIT_DATA_DIRECTORY` in `.env`, for example:
+
+```text
+SHELF_AUDIT_DATA_DIRECTORY=C:\tmp\shelf-audit-runtime
 ```
 
-Open `http://127.0.0.1:3000` to use the basic upload UI. It accepts JPEG, PNG, WebP, MP4, MOV, and WebM media, and sends it through the same persisted audit pipeline as the API. `GET /health` returns `{ "status": "ok" }`. Runtime data is local and ignored under `data/`. FFmpeg and ffprobe are bundled for this prototype; set `FFMPEG_PATH` and `FFPROBE_PATH` to override either executable.
+If a previous local database is incompatible after a branch change, set this variable to a new empty directory instead of deleting existing data.
 
-The local detector is optional supporting evidence: it uses quantized `Xenova/detr-resnet-50` through Transformers.js, caches its first-run download in ignored `data/model-cache`, and never assigns a catalog SKU. Run its opt-in smoke test with `npm.cmd run test:detector:smoke`.
+## Verification
+
+```powershell
+npm.cmd run typecheck
+npm.cmd test
+```
+
+The optional local generic detector is not required for the browser demo. Its smoke test can be run with:
+
+```powershell
+npm.cmd run test:detector:smoke
+```
