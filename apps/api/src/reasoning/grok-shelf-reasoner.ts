@@ -38,9 +38,14 @@ function normalizeProviderOutput(candidate: unknown): unknown {
     } else if (quality.status === "poor") {
       quality.status = "degraded";
     }
+    if (Array.isArray(quality.warnings)) {
+      quality.warnings = quality.warnings.slice(0, 20);
+    }
   }
   if (typeof analysis.notes === "string") {
     analysis.notes = [analysis.notes];
+  } else if (Array.isArray(analysis.notes)) {
+    analysis.notes = analysis.notes.slice(0, 20);
   }
   if (!Array.isArray(analysis.observations)) {
     return analysis;
@@ -71,6 +76,15 @@ function normalizeProviderOutput(candidate: unknown): unknown {
               ? "medium"
               : "low";
       }
+      if (Array.isArray(normalizedClaim.evidence)) {
+        normalizedClaim.evidence = normalizedClaim.evidence.slice(0, 12);
+      }
+    }
+    const candidates = (observation as Record<string, unknown>)
+      .catalogCandidates;
+    if (Array.isArray(candidates)) {
+      (observation as Record<string, unknown>).catalogCandidates =
+        candidates.slice(0, 5);
     }
   }
   return analysis;
