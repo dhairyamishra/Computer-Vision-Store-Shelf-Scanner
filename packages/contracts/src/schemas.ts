@@ -143,9 +143,16 @@ export const RawProductObservationSchema = z.object({
 
 export const RawShelfAnalysisSchema = z.object({
   schemaVersion: z.literal(SHELF_AUDIT_SCHEMA_VERSION),
+  observedCategory: z.string().min(1).max(100),
   captureQuality: CaptureQualitySchema,
   observations: z.array(RawProductObservationSchema),
   notes: z.array(z.string().min(1)).max(20),
+});
+
+export const CatalogScopeSchema = z.object({
+  observedCategory: z.string().min(1).max(100),
+  catalogCategory: z.string().min(1).max(100).nullable(),
+  status: z.enum(["applied", "no_matching_catalog"]),
 });
 
 export const OutOfStockSchema = z
@@ -206,6 +213,7 @@ export const ShelfAuditSchema = z.object({
     mediaPath: safeMediaPathSchema,
   }),
   status: AuditRunStatusSchema,
+  catalogScope: CatalogScopeSchema,
   captureQuality: CaptureQualitySchema,
   observations: z.array(RawProductObservationSchema),
   outOfStocks: z.array(OutOfStockSchema),

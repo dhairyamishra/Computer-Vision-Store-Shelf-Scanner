@@ -64,6 +64,13 @@ const migrations = [
       ADD COLUMN IF NOT EXISTS processing_metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
     `,
   },
+  {
+    id: "003_product_categories",
+    sql: `
+      ALTER TABLE products
+      ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'uncategorized';
+    `,
+  },
 ] as const;
 
 export async function migrateDatabase(database: PGlite): Promise<void> {

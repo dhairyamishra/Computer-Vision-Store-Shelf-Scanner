@@ -47,6 +47,11 @@ export class FixtureShelfReasoner implements ShelfReasoner {
       },
       sourceVideo: { mediaPath: input.sourceVideoPath },
       status: "completed",
+      catalogScope: {
+        observedCategory: "unknown",
+        catalogCategory: null,
+        status: "no_matching_catalog",
+      },
       captureQuality: {
         status: input.metadata.warnings.length > 0 ? "degraded" : "usable",
         warnings: [

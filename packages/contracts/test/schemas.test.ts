@@ -16,6 +16,7 @@ const evidence = {
 
 const rawAnalysis = {
   schemaVersion: "1.0",
+  observedCategory: "spirits",
   captureQuality: {
     status: "usable",
     warnings: [],
@@ -123,6 +124,11 @@ describe("shared shelf-audit contracts", () => {
           mediaPath: "uploads/audit-001.mp4",
         },
         status: "completed",
+        catalogScope: {
+          observedCategory: "spirits",
+          catalogCategory: null,
+          status: "no_matching_catalog",
+        },
         captureQuality: rawAnalysis.captureQuality,
         observations: rawAnalysis.observations,
         outOfStocks: [

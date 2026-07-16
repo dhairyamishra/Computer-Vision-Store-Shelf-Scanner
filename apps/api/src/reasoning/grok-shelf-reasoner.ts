@@ -9,6 +9,7 @@ import {
 } from "@shelf-audit/contracts";
 
 import type { ShelfReasoner } from "./fixture-shelf-reasoner.js";
+import type { AccountAssortmentItem } from "../persistence/audit-repository.js";
 
 const rawShelfAnalysisJsonSchema = z.toJSONSchema(RawShelfAnalysisSchema);
 
@@ -103,6 +104,54 @@ export function combineCaptureWarnings(
   ].slice(0, 20);
 }
 
+function normalizeCategory(category: string): string {
+  const normalized = category
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, " ");
+  if (
+    /\b(stationery|stationary|office supplies|writing supplies|pens|markers)\b/.test(
+      normalized,
+    )
+  ) {
+    return "stationery";
+  }
+  if (
+    /\b(beverage|beverages|drink|drinks|water|soda|juice)\b/.test(normalized)
+  ) {
+    return "beverages";
+  }
+  return normalized.replace(/\s+/g, " ");
+}
+
+export function resolveCatalogScope(
+  observedCategory: string,
+  assortment: readonly AccountAssortmentItem[],
+) {
+  const normalizedObservedCategory = normalizeCategory(observedCategory);
+  const catalogCategory = assortment
+    .map((item) => item.category)
+    .find(
+      (category) => normalizeCategory(category) === normalizedObservedCategory,
+    );
+  const matchingAssortment = catalogCategory
+    ? assortment.filter(
+        (item) =>
+          normalizeCategory(item.category) ===
+          normalizeCategory(catalogCategory),
+      )
+    : [];
+
+  return {
+    observedCategory: normalizedObservedCategory || "unknown",
+    catalogCategory: catalogCategory ?? null,
+    status: catalogCategory
+      ? ("applied" as const)
+      : ("no_matching_catalog" as const),
+    matchingAssortment,
+  };
+}
+
 export class GrokShelfReasoner implements ShelfReasoner {
   readonly provider = "xai";
   readonly model: string;
@@ -146,12 +195,13 @@ export class GrokShelfReasoner implements ShelfReasoner {
     );
     const catalog = (input.assortment ?? []).map((item) => ({
       productId: item.productId,
+      category: item.category,
       brand: item.brand,
       product: item.product,
       variant: item.variant,
       size: item.size,
     }));
-    const prompt = `Read this retail shelf conservatively. Return JSON only, with no Markdown. The required top-level object is {schemaVersion:"1.0",captureQuality:{status,warnings},observations,notes}. captureQuality.status MUST be usable, degraded, or unusable. Every observation MUST contain observationId, matchLevel (exact_sku|product_family|brand_only|unknown), brand, product, variant, sizeOrPack, facings, shelfPosition, and catalogCandidates. Every claim MUST contain value, status, confidence, confidenceLevel, reason, and evidence. Valid claim statuses are observed, inferred, uncertain, not_observable, not_applicable. confidenceLevel MUST be low for confidence below .5, medium for .5 through below .8, high for .8 or above. For not_observable or not_applicable, value MUST be null. shelfPosition.value must be top, eye_level, waist_level, bottom, endcap, or unknown. evidence is an array of {frameId,timestampMs,description}, using only supplied frame IDs. catalogCandidates is an array of {productId,score,reason}; use only supplied catalog productIds. Always include every field, using null plus not_observable when the footage cannot support a read. Never invent unreadable labels, SKU matches, or out-of-stocks. Catalog: ${JSON.stringify(catalog)}. Frames: ${JSON.stringify(input.frames.map(({ frameId, timestampMs }) => ({ frameId, timestampMs })))}.`;
+    const prompt = `Read this retail shelf conservatively. Return JSON only, with no Markdown. The required top-level object is {schemaVersion:"1.0",observedCategory,captureQuality:{status,warnings},observations,notes}. observedCategory MUST name the visible merchandise category, such as stationery, beverages, or unknown; it is not constrained by the supplied catalog. captureQuality.status MUST be usable, degraded, or unusable. Every observation MUST contain observationId, matchLevel (exact_sku|product_family|brand_only|unknown), brand, product, variant, sizeOrPack, facings, shelfPosition, and catalogCandidates. Every claim MUST contain value, status, confidence, confidenceLevel, reason, and evidence. Valid claim statuses are observed, inferred, uncertain, not_observable, not_applicable. confidenceLevel MUST be low for confidence below .5, medium for .5 through below .8, high for .8 or above. For not_observable or not_applicable, value MUST be null. shelfPosition.value must be top, eye_level, waist_level, bottom, endcap, or unknown. evidence is an array of {frameId,timestampMs,description}, using only supplied frame IDs. catalogCandidates is an array of {productId,score,reason}; use only supplied catalog productIds AND only for catalog products in the observedCategory. Always include every field, using null plus not_observable when the footage cannot support a read. Never invent unreadable labels, SKU matches, or out-of-stocks. Catalog: ${JSON.stringify(catalog)}. Frames: ${JSON.stringify(input.frames.map(({ frameId, timestampMs }) => ({ frameId, timestampMs })))}.`;
     let response: Response;
     try {
       response = await (this.options.fetch ?? fetch)(
@@ -212,6 +262,27 @@ export class GrokShelfReasoner implements ShelfReasoner {
       const analysis = RawShelfAnalysisSchema.parse(
         normalizeProviderOutput(candidate),
       );
+      const catalogScope = resolveCatalogScope(
+        analysis.observedCategory,
+        input.assortment ?? [],
+      );
+      const permittedProductIds = new Set(
+        catalogScope.matchingAssortment.map((item) => item.productId),
+      );
+      const observations = analysis.observations.map((observation) => {
+        const catalogCandidates = observation.catalogCandidates.filter(
+          (candidate) => permittedProductIds.has(candidate.productId),
+        );
+        return {
+          ...observation,
+          matchLevel:
+            observation.matchLevel === "exact_sku" &&
+            catalogCandidates.length === 0
+              ? "product_family"
+              : observation.matchLevel,
+          catalogCandidates,
+        };
+      });
       return ShelfAuditSchema.parse({
         auditId: input.auditId,
         schemaVersion: SHELF_AUDIT_SCHEMA_VERSION,
@@ -221,6 +292,11 @@ export class GrokShelfReasoner implements ShelfReasoner {
         },
         sourceVideo: { mediaPath: input.sourceVideoPath },
         status: "completed",
+        catalogScope: {
+          observedCategory: catalogScope.observedCategory,
+          catalogCategory: catalogScope.catalogCategory,
+          status: catalogScope.status,
+        },
         captureQuality: {
           status: analysis.captureQuality.status,
           warnings: combineCaptureWarnings(
@@ -230,8 +306,8 @@ export class GrokShelfReasoner implements ShelfReasoner {
             input.detector?.warnings,
           ),
         },
-        observations: analysis.observations,
-        outOfStocks: (input.assortment ?? [])
+        observations,
+        outOfStocks: catalogScope.matchingAssortment
           .filter((item) => item.expectedPresence)
           .map((item) => ({
             expectedProductId: item.productId,

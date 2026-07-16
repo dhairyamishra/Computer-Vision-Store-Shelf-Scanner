@@ -16,6 +16,7 @@ export type Account = {
 
 export type AccountAssortmentItem = {
   productId: string;
+  category: string;
   brand: string;
   product: string;
   variant: string | null;
@@ -85,6 +86,7 @@ type AccountRow = {
 
 type AssortmentRow = {
   product_id: string;
+  category: string;
   brand: string;
   product: string;
   variant: string | null;
@@ -167,7 +169,7 @@ export class PGliteAuditRepository implements AuditRepository {
     accountId: string,
   ): Promise<AccountAssortmentItem[]> {
     const result = await this.database.query<AssortmentRow>(
-      `SELECT assortment.product_id, product.brand, product.product, product.variant, product.size,
+      `SELECT assortment.product_id, product.category, product.brand, product.product, product.variant, product.size,
               assortment.expected_presence, assortment.expected_facings,
               assortment.expected_shelf_position, assortment.expected_price_cents
        FROM account_assortments AS assortment
@@ -178,6 +180,7 @@ export class PGliteAuditRepository implements AuditRepository {
     );
     return result.rows.map((row) => ({
       productId: row.product_id,
+      category: row.category,
       brand: row.brand,
       product: row.product,
       variant: row.variant,

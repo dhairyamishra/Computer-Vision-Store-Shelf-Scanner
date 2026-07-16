@@ -25,6 +25,7 @@ const accounts: AccountSeed[] = [
 const products = [
   {
     id: "product-sparkling-water-lime-12oz",
+    category: "beverages",
     brand: "Clear Spring",
     product: "Sparkling Water",
     variant: "Lime",
@@ -34,6 +35,7 @@ const products = [
   },
   {
     id: "product-sparkling-water-berry-12oz",
+    category: "beverages",
     brand: "Clear Spring",
     product: "Sparkling Water",
     variant: "Berry",
@@ -43,12 +45,43 @@ const products = [
   },
   {
     id: "product-mineral-water-plain-1l",
+    category: "beverages",
     brand: "Mountain Well",
     product: "Mineral Water",
     variant: "Plain",
     size: "1 L",
     pack: null,
     aliases: ["Mountain Well 1L"],
+  },
+  {
+    id: "product-sharpie-permanent-marker-black",
+    category: "stationery",
+    brand: "Sharpie",
+    product: "Permanent Marker",
+    variant: "Black",
+    size: null,
+    pack: null,
+    aliases: ["Sharpie Black Marker"],
+  },
+  {
+    id: "product-papermate-inkjoy-pens",
+    category: "stationery",
+    brand: "Paper Mate",
+    product: "InkJoy Pens",
+    variant: null,
+    size: null,
+    pack: null,
+    aliases: ["PaperMate InkJoy"],
+  },
+  {
+    id: "product-postit-notes",
+    category: "stationery",
+    brand: "Post-it",
+    product: "Notes",
+    variant: null,
+    size: null,
+    pack: null,
+    aliases: ["Post it Notes", "Sticky Notes"],
   },
 ] as const;
 
@@ -74,6 +107,27 @@ const assortments = [
     expectedShelfPosition: "waist_level",
     expectedPriceCents: 199,
   },
+  {
+    accountId: "account-northside-market",
+    productId: "product-sharpie-permanent-marker-black",
+    expectedFacings: 3,
+    expectedShelfPosition: "eye_level",
+    expectedPriceCents: null,
+  },
+  {
+    accountId: "account-northside-market",
+    productId: "product-papermate-inkjoy-pens",
+    expectedFacings: 2,
+    expectedShelfPosition: "eye_level",
+    expectedPriceCents: null,
+  },
+  {
+    accountId: "account-northside-market",
+    productId: "product-postit-notes",
+    expectedFacings: 2,
+    expectedShelfPosition: "eye_level",
+    expectedPriceCents: null,
+  },
 ] as const;
 
 export async function seedDemoData(database: PGlite): Promise<void> {
@@ -89,11 +143,12 @@ export async function seedDemoData(database: PGlite): Promise<void> {
 
     for (const product of products) {
       await transaction.query(
-        `INSERT INTO products (id, brand, product, variant, size, pack, aliases)
-         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
-         ON CONFLICT (id) DO NOTHING`,
+        `INSERT INTO products (id, category, brand, product, variant, size, pack, aliases)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+         ON CONFLICT (id) DO UPDATE SET category = EXCLUDED.category`,
         [
           product.id,
+          product.category,
           product.brand,
           product.product,
           product.variant,
