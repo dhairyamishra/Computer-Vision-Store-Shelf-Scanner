@@ -383,7 +383,11 @@ export async function createApiServer(
         frames: selectedFrames,
         qualityWarnings: selectedFrames.flatMap((frame) =>
           frame.selection.reasons
-            .filter((reason) => reason !== "temporal coverage")
+            .filter(
+              (reason) =>
+                reason !== "temporal coverage" &&
+                reason !== "best quality in temporal segment",
+            )
             .map((reason) => `Frame ${frame.frameId}: ${reason}.`),
         ),
         detector,

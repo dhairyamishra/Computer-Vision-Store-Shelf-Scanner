@@ -90,6 +90,19 @@ function normalizeProviderOutput(candidate: unknown): unknown {
   return analysis;
 }
 
+export function combineCaptureWarnings(
+  ...sources: Array<readonly string[] | undefined>
+): string[] {
+  return [
+    ...new Set(
+      sources
+        .flatMap((warnings) => warnings ?? [])
+        .map((warning) => warning.trim())
+        .filter(Boolean),
+    ),
+  ].slice(0, 20);
+}
+
 export class GrokShelfReasoner implements ShelfReasoner {
   readonly provider = "xai";
   readonly model: string;
@@ -210,14 +223,12 @@ export class GrokShelfReasoner implements ShelfReasoner {
         status: "completed",
         captureQuality: {
           status: analysis.captureQuality.status,
-          warnings: [
-            ...new Set([
-              ...analysis.captureQuality.warnings,
-              ...input.metadata.warnings,
-              ...(input.qualityWarnings ?? []),
-              ...(input.detector?.warnings ?? []),
-            ]),
-          ],
+          warnings: combineCaptureWarnings(
+            analysis.captureQuality.warnings,
+            input.metadata.warnings,
+            input.qualityWarnings,
+            input.detector?.warnings,
+          ),
         },
         observations: analysis.observations,
         outOfStocks: (input.assortment ?? [])
