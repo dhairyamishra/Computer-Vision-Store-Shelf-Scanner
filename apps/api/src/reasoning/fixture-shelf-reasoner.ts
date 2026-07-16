@@ -10,6 +10,7 @@ import type {
   AccountAssortmentItem,
 } from "../persistence/audit-repository.js";
 import type { CandidateFrame, VideoMetadata } from "../video/types.js";
+import type { OcrEvidence } from "../perception/index.js";
 
 export interface ShelfReasoner {
   readonly provider?: string;
@@ -26,6 +27,8 @@ export interface ShelfReasoner {
     };
     evidenceCoverage: EvidenceCoverage;
     assortment?: AccountAssortmentItem[];
+    ocrEvidence?: OcrEvidence[];
+    ocrVersion?: string;
   }): Promise<ShelfAudit>;
 }
 
@@ -43,6 +46,8 @@ export class FixtureShelfReasoner implements ShelfReasoner {
       warnings: string[];
     };
     evidenceCoverage: EvidenceCoverage;
+    ocrEvidence?: OcrEvidence[];
+    ocrVersion?: string;
   }): Promise<ShelfAudit> {
     return ShelfAuditSchema.parse({
       auditId: input.auditId,
@@ -75,6 +80,7 @@ export class FixtureShelfReasoner implements ShelfReasoner {
         pipelineVersion: "fixture-v1",
         provider: "fixture",
         model: "deterministic",
+        ...(input.ocrVersion ? { ocrVersion: input.ocrVersion } : {}),
       },
     });
   }

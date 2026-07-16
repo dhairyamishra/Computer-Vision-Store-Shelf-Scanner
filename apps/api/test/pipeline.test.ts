@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { createApiServer } from "../src/server/index.js";
+import type { OcrService } from "../src/perception/index.js";
 import { extractFixtureFrames } from "../src/video/index.js";
 
 const fixturePath = fileURLToPath(
@@ -103,7 +104,18 @@ describe("Fastify audit API", () => {
   });
 
   it("persists a schema-valid fixture audit and marks a failed processing stage", async () => {
-    const server = await createApiServer({ mode: "test" });
+    const unavailableOcr: OcrService = {
+      extract: async () => ({
+        status: "unavailable",
+        evidence: [],
+        skippedFrames: [],
+        unavailableReason: "Tesseract is not installed.",
+      }),
+    };
+    const server = await createApiServer({
+      mode: "test",
+      ocrService: unavailableOcr,
+    });
     try {
       const video = await readFile(fixturePath);
       const upload = multipartPayload(
@@ -139,8 +151,14 @@ describe("Fastify audit API", () => {
         },
       });
       expect(audit.json().processingMetadata).not.toHaveProperty("detector");
+      expect(audit.json().processingMetadata).toMatchObject({
+        ocr: { status: "unavailable", evidence: [] },
+      });
       expect(audit.json().finalAudit.provenance).not.toHaveProperty(
         "detectorVersion",
+      );
+      expect(audit.json().finalAudit.provenance).not.toHaveProperty(
+        "ocrVersion",
       );
 
       const failingServer = await createApiServer({
@@ -173,6 +191,57 @@ describe("Fastify audit API", () => {
       } finally {
         await failingServer.close();
       }
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("records available OCR internally and exposes only its provenance marker", async () => {
+    const availableOcr: OcrService = {
+      extract: async () => ({
+        status: "available",
+        providerVersion: "tesseract 5.4.0",
+        evidence: [
+          {
+            frameId: "frame-1",
+            timestampMs: 0,
+            region: { xMin: 0, yMin: 0, xMax: 1, yMax: 1 },
+            description: "Local Tesseract OCR (full frame).",
+            crop: "full_frame",
+            text: "SALE",
+            confidence: 95,
+          },
+        ],
+        skippedFrames: [],
+      }),
+    };
+    const server = await createApiServer({
+      mode: "test",
+      ocrService: availableOcr,
+    });
+    try {
+      const upload = multipartPayload(
+        { accountId: "account-northside-market" },
+        await readFile(fixturePath),
+      );
+      const response = await server.inject({
+        method: "POST",
+        url: "/audits",
+        payload: upload.payload,
+        headers: { "content-type": upload.contentType },
+      });
+      const audit = await server.inject({
+        method: "GET",
+        url: `/audits/${response.json<{ auditId: string }>().auditId}`,
+      });
+
+      expect(audit.json()).toMatchObject({
+        processingMetadata: {
+          ocr: { status: "available", evidence: [{ text: "SALE" }] },
+        },
+        finalAudit: { provenance: { ocrVersion: "tesseract 5.4.0" } },
+      });
+      expect(audit.json().finalAudit).not.toHaveProperty("ocrEvidence");
     } finally {
       await server.close();
     }

@@ -32,6 +32,7 @@ import {
   type VideoProcessor,
 } from "../video/index.js";
 import type { CandidateFrame, VideoMetadata } from "../video/types.js";
+import { TesseractOcrService, type OcrService } from "../perception/index.js";
 import { SHELF_AUDIT_UI } from "./ui.js";
 
 type ErrorPayload = {
@@ -45,6 +46,7 @@ export type CreateApiServerOptions = {
   maxDurationMs?: number;
   videoProcessor?: VideoProcessor;
   reasoner?: ShelfReasoner;
+  ocrService?: OcrService;
 };
 
 const defaultMaxUploadBytes = 100 * 1024 * 1024;
@@ -66,6 +68,19 @@ async function findAccount(repository: AuditRepository, accountId: string) {
 
 function stageDurations(startedAt: number): Record<string, number> {
   return { totalMs: Math.max(0, Date.now() - startedAt) };
+}
+
+function compactOcrEvidence<T extends { frameId: string }>(
+  evidence: readonly T[],
+): T[] {
+  const perFrame = new Map<string, number>();
+  return evidence
+    .filter((item) => {
+      const count = perFrame.get(item.frameId) ?? 0;
+      perFrame.set(item.frameId, count + 1);
+      return count < 2;
+    })
+    .slice(0, 24);
 }
 
 function isSupportedImage(mimeType: string): boolean {
@@ -151,6 +166,7 @@ export async function createApiServer(
           apiKey: process.env.XAI_API_KEY,
           model: process.env.XAI_MODEL,
         }));
+  const ocrService = options.ocrService ?? new TesseractOcrService();
   const maxUploadBytes = options.maxUploadBytes ?? defaultMaxUploadBytes;
   const maxDurationMs = options.maxDurationMs ?? defaultMaxDurationMs;
   const server = Fastify({ logger: false });
@@ -329,6 +345,8 @@ export async function createApiServer(
           ? ("single_image" as const)
           : ("per_second_quality_scene_change" as const),
       };
+      const ocr = await ocrService.extract(selectedFrames);
+      const ocrEvidence = compactOcrEvidence(ocr.evidence);
       await dependencies.repository.recordProcessingMetadata(audit.id, {
         retainedFrames: selection.retainedFrames.map((frame) => ({
           frameId: frame.frameId,
@@ -355,6 +373,17 @@ export async function createApiServer(
             reason:
               "Not selected after temporal coverage and scene-change ranking.",
           })),
+        ocr: {
+          status: ocr.status,
+          ...(ocr.providerVersion
+            ? { providerVersion: ocr.providerVersion }
+            : {}),
+          ...(ocr.unavailableReason
+            ? { unavailableReason: ocr.unavailableReason }
+            : {}),
+          evidence: ocrEvidence,
+          skippedFrames: ocr.skippedFrames,
+        },
       });
       await dependencies.repository.transitionAudit(
         audit.id,
@@ -374,6 +403,10 @@ export async function createApiServer(
           warnings: selection.qualityWarnings,
         },
         evidenceCoverage,
+        ocrEvidence,
+        ...(ocr.status === "available" && ocr.providerVersion
+          ? { ocrVersion: ocr.providerVersion }
+          : {}),
       });
       await dependencies.repository.transitionAudit(audit.id, "grounding");
       await dependencies.repository.transitionAudit(audit.id, "persisting");

@@ -291,7 +291,16 @@ export class GrokShelfReasoner implements ShelfReasoner {
       variant: item.variant,
       size: item.size,
     }));
-    const prompt = `Read this retail shelf conservatively. Return JSON only, with no Markdown. The required top-level object is {schemaVersion:"1.0",observedCategory,captureQuality:{status,warnings},observations,notes}. observedCategory MUST name the visible merchandise category, such as stationery, beverages, or unknown; it is not constrained by the supplied catalog. captureQuality.warnings may describe only visible optical or coverage limits, never catalog, account, API, model, detector, or system state. Every observation MUST contain observationId, matchLevel (exact_sku|product_family|brand_only|unknown), brand, product, variant, sizeOrPack, facings, shelfPosition, and catalogCandidates. Every claim MUST contain value, status, confidence, confidenceLevel, reason, and evidence. Valid claim statuses are observed, inferred, uncertain, not_observable, not_applicable. confidenceLevel MUST be low for confidence below .5, medium for .5 through below .8, high for .8 or above. For not_observable or not_applicable, value MUST be null. shelfPosition.value must be top, eye_level, waist_level, bottom, endcap, or unknown. evidence is an array of {frameId,timestampMs,description}, using only supplied frame IDs. catalogCandidates is an array of {productId,score,reason}; use only supplied catalog productIds AND only for catalog products in the observedCategory. Claims must be based only on readable text, visible packaging, or counted facings in the supplied images. Do not use brand familiarity or outside product knowledge to fill unreadable product, variant, size, or facing fields. Always include every field, using null plus not_observable when the footage cannot support a read. Never invent unreadable labels, SKU matches, or out-of-stocks. Catalog: ${JSON.stringify(catalog)}. Frames: ${JSON.stringify(input.frames.map(({ frameId, timestampMs }) => ({ frameId, timestampMs })))}.`;
+    const ocrEvidence = (input.ocrEvidence ?? [])
+      .slice(0, 24)
+      .map(({ frameId, timestampMs, region, text, confidence }) => ({
+        frameId,
+        timestampMs,
+        region,
+        text,
+        confidence,
+      }));
+    const prompt = `Read this retail shelf conservatively. Return JSON only, with no Markdown. The required top-level object is {schemaVersion:"1.0",observedCategory,captureQuality:{status,warnings},observations,notes}. observedCategory MUST name the visible merchandise category, such as stationery, beverages, or unknown; it is not constrained by the supplied catalog. captureQuality.warnings may describe only visible optical or coverage limits, never catalog, account, API, model, detector, or system state. Every observation MUST contain observationId, matchLevel (exact_sku|product_family|brand_only|unknown), brand, product, variant, sizeOrPack, facings, shelfPosition, and catalogCandidates. Every claim MUST contain value, status, confidence, confidenceLevel, reason, and evidence. Valid claim statuses are observed, inferred, uncertain, not_observable, not_applicable. confidenceLevel MUST be low for confidence below .5, medium for .5 through below .8, high for .8 or above. For not_observable or not_applicable, value MUST be null. shelfPosition.value must be top, eye_level, waist_level, bottom, endcap, or unknown. evidence is an array of {frameId,timestampMs,description}, using only supplied frame IDs. catalogCandidates is an array of {productId,score,reason}; use only supplied catalog productIds AND only for catalog products in the observedCategory. Claims must be based only on readable text, visible packaging, or counted facings in the supplied images. Do not use brand familiarity or outside product knowledge to fill unreadable product, variant, size, or facing fields. Local OCR evidence is imperfect supporting evidence only: use it only when the same text is visibly supported in its referenced frame and never use it alone to fill a price, SKU, size, or promotion claim. Always include every field, using null plus not_observable when the footage cannot support a read. Never invent unreadable labels, SKU matches, or out-of-stocks. Catalog: ${JSON.stringify(catalog)}. Frames: ${JSON.stringify(input.frames.map(({ frameId, timestampMs }) => ({ frameId, timestampMs })))}. OCR evidence: ${JSON.stringify(ocrEvidence)}.`;
     let response: Response;
     try {
       response = await (this.options.fetch ?? fetch)(
@@ -422,6 +431,7 @@ export class GrokShelfReasoner implements ShelfReasoner {
           provider: this.provider,
           model: this.model,
           promptVersion: "shelf-audit-v1",
+          ...(input.ocrVersion ? { ocrVersion: input.ocrVersion } : {}),
         },
       });
     } catch (error) {

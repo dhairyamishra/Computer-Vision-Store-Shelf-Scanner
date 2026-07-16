@@ -235,6 +235,7 @@ export const ShelfAuditSchema = z.object({
     model: z.string().min(1).optional(),
     promptVersion: z.string().min(1).optional(),
     detectorVersion: z.string().min(1).optional(),
+    ocrVersion: z.string().min(1).optional(),
   }),
 });
 

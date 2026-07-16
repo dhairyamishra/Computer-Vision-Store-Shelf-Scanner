@@ -1,106 +1,82 @@
-# Computer-Vision-Store-Shelf-Scanner
+# Shelf Audit Prototype
 
-A browser-based shelf-audit prototype: upload a shelf photo or short video, have Grok analyze selected evidence frames against an account catalog, and review the persisted structured JSON audit.
+Upload a shelf photo or short video, choose the store being visited, and receive a persisted JSON shelf audit. The app is intentionally small: the goal is to demonstrate a real media-to-structured-record pipeline, not a polished dashboard.
 
-## Run locally
+## Run it locally
 
-Requirements:
+You need Node.js 22.16+ and an xAI API key for real vision analysis.
 
-- Node.js 22.16.0 (see [.nvmrc](.nvmrc))
-- An xAI API key for real Grok inference
+### Windows
 
-### Windows PowerShell
+```powershell
+npm.cmd install --include=dev
+Copy-Item .env.example .env
+npm.cmd run dev
+```
 
-Use `npm.cmd` rather than `npm`:
+Set `XAI_API_KEY` in `.env`, then open [http://localhost:3000](http://localhost:3000).
 
-1. Install dependencies:
+Optional free local OCR:
 
-   ```powershell
-   npm.cmd install --include=dev
-   ```
+```powershell
+winget install --id UB-Mannheim.TesseractOCR --exact
+```
 
-2. Create a local environment file and set the Grok key:
-
-   ```powershell
-   Copy-Item .env.example .env
-   ```
-
-   In `.env`, set `XAI_API_KEY` and leave `FFMPEG_PATH` / `FFPROBE_PATH` blank to use the bundled binaries. Do not commit `.env`.
-
-3. Start the combined backend and browser UI:
-
-   ```powershell
-   npm.cmd run dev
-   ```
-
-4. Open [http://localhost:3000](http://localhost:3000). Select an account, upload a JPEG/PNG/WebP image or MP4/MOV/WebM video, and submit it for analysis. The completed audit JSON is displayed in the browser.
-
-The health check is available at [http://localhost:3000/health](http://localhost:3000/health) and returns `{ "status": "ok" }`.
+Restart PowerShell after installing it. If needed, set `TESSERACT_PATH` in `.env` to the full path of `tesseract.exe`. OCR is optional; the app still works without it.
 
 ### macOS / Linux
 
 ```bash
 npm install --include=dev
 cp .env.example .env
-```
-
-Set `XAI_API_KEY` in `.env`, then run:
-
-```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Set `XAI_API_KEY` in `.env`, then open [http://localhost:3000](http://localhost:3000). To use optional OCR, install your platform's `tesseract` package or set `TESSERACT_PATH`.
 
-### Local runtime data
+Run checks with `npm.cmd run typecheck` and `npm.cmd test` on Windows, or `npm run typecheck` and `npm test` on macOS/Linux.
 
-Audits, uploads, frames, the local PGlite database, and the optional detector cache are stored locally under `data/` and are ignored by Git. To use a separate runtime directory, set `SHELF_AUDIT_DATA_DIRECTORY` in `.env`, for example:
+## What happens to an upload
 
 ```text
-SHELF_AUDIT_DATA_DIRECTORY=C:\tmp\shelf-audit-runtime
+Photo or video upload
+  → choose the store account
+  → extract and score video frames locally
+  → retain the best frame from each second
+  → choose up to 12 frames covering the full video
+  → optional local Tesseract text read
+  → Grok reviews the selected images
+  → backend validates and grounds the JSON audit
+  → save the audit, source-media pointer, and evidence metadata locally
 ```
 
-If a previous local database is incompatible after a branch change, set this variable to a new empty directory instead of deleting existing data.
+For a photo, the app uses one evidence frame. For video, FFmpeg samples two frames per second. Sharp scores focus, exposure, clipping, and visual change. The backend keeps the best available frame per second, then sends at most 12 frames to Grok. This keeps the request bounded while still covering the beginning and end of the video.
 
-## Verification
+## Why these choices
 
-```powershell
-npm.cmd run typecheck
-npm.cmd test
-```
+- **Browser upload UI:** It was the fastest way to prove the real video-to-audit loop in the time available. The API is separate, so an Expo/React Native camera client can use the same workflow later.
+- **Grok for visual interpretation:** Retail footage needs general visual reasoning across products, signs, and categories. No model was trained for this prototype.
+- **Local frame selection and grounding:** These are owned by the application, not delegated to the model. The backend decides which frames are useful, validates the response shape, records evidence timestamps, scopes catalog matching to the detected category, and allows fields to be unknown.
+- **Optional Tesseract OCR:** It is free and local. It provides supporting text from selected frames, such as visible product names or promotion wording. It is deliberately not trusted as a standalone SKU or price reader.
 
-The optional local generic detector is not required for the browser demo. Its smoke test can be run with:
+## What the audit can say honestly
 
-```powershell
-npm.cmd run test:detector:smoke
-```
+The audit includes the selected account, visible category, observed products, evidence references, confidence, capture quality, coverage of the video, notes, and catalog scope.
 
-## Sample videos
+The app only returns an exact SKU when the visible evidence and the relevant account catalog support it. When text, size, variant, facings, or shelf position cannot be read, the field is marked as not observable instead of guessed. An expected product is not called out of stock merely because it was not seen.
 
-Five real, messy shelf videos are included in [`data/sample-store-videos`](data/sample-store-videos). They are short handheld store-aisle captures and can be uploaded directly through the browser UI. They intentionally include movement, partial labels, varied angles, and a candy aisle so the category detection is not restricted to beverages.
+Bad lighting, glare, motion blur, hidden labels, and near-identical packaging are the first things to fail. The response should become lower-confidence or incomplete rather than confidently wrong. The local OCR experiment reinforces this: it finds useful text in real footage, but its noisy output is only supporting evidence.
 
-## Architecture and reflection
+## Data and samples
 
-### What was built
+Audits, uploads, extracted frames, and the local PGlite database are stored under `data/` and ignored by Git. Set `SHELF_AUDIT_DATA_DIRECTORY` in `.env` to use another local runtime folder.
 
-This is a deliberately small browser harness around the core field-audit loop: select an account, upload a photo or video, extract representative frames, ask Grok for a structured visual reading, apply grounding rules, and persist the audit locally. I used a browser UI rather than completing the Expo client because it made the real video-to-JSON loop demonstrable within the time box; an Expo/React Native client would call the same API in production.
+Five real handheld store videos are included in [`data/sample-store-videos`](data/sample-store-videos). They contain varied angles, partial labels, movement, and multiple retail categories.
 
-FFmpeg extracts video frames and the application selects a quality-aware, coverage-preserving subset. Grok performs the visual reading. The application—not the model—owns schema validation, evidence references, category-to-catalog applicability, exact-SKU downgrades, capture-quality status, and the rule that an absent expected product is not automatically out of stock.
+## Deliberate limits
 
-### Latency and cost
+This demo uses PGlite and local files rather than Supabase/Postgres and cloud storage. That kept the focus on the extraction and grounding workflow. In production, Supabase would hold `accounts`, `products`, `account_assortments`, `audits`, and `audit_evidence`; private object storage would hold videos and frames.
 
-The largest latency and cost is the managed vision request, followed by upload for a larger video. Local frame extraction and scoring are inexpensive. For short videos, one retained frame per second is analyzed; longer videos are capped at 12 coverage/scene-change frames to bound payload and model cost. To halve latency, I would reduce the frame budget or image resolution before changing the reasoning contract. For on-device operation, I would move capture, quality scoring, and upload retry to the client, then use a smaller local model/OCR only for triage; exact product interpretation would still need a server-side catalog and policy layer.
+The prototype does not yet include an Expo client, offline upload queue, dedicated price-tag OCR, planogram comparison, share-of-shelf calculation, or a broad product catalog. A production mobile app would save an encrypted draft locally, use an idempotency key, and retry uploads when a connection returns.
 
-### Bad footage and trust
-
-Glare, motion blur, oblique angles, hidden labels, and nearly identical packages fail first. The audit responds with capture-quality warnings, nullable fields, evidence references, and lower confidence instead of filling unsupported details. A wrong read is caught by requiring selected-frame evidence for material claims, restricting exact SKU matches to catalog-supported visual details, and treating unreadable size/variant/price as not observable. Confidence is only useful if it is calibrated against field-level accuracy and abstention is allowed.
-
-### Offline and scale
-
-This demo processes synchronously and does not yet provide offline capture or resumable upload. A production mobile client would save the encrypted video and audit draft locally, assign an idempotency key, queue upload when connectivity returns, and show a durable pending state. At scale, I would measure SKU precision/recall by match level, field-level accuracy, OOS precision/recall, confidence calibration, abstention rate, and rep overrides. Trust comes from showing evidence and from a high-confidence claim being measurably more reliable than a medium-confidence one—not from maximizing the number of claims.
-
-### Deliberate omissions and production persistence
-
-I did not build a complete Expo client, dedicated OCR, planogram engine, background queue, offline sync, or broad retail catalog. I also intentionally used local PGlite and filesystem media rather than Supabase because this is a small runnable demo and the real extraction/grounding loop was the higher-value use of the time box.
-
-For a real product, I would use Supabase Postgres and Storage: `accounts`, `products`, and `account_assortments` would hold catalog/expected-shelf data; `audits` would store audit status, account, source-media pointer, final JSON, and model metadata; `audit_evidence` would store selected-frame pointers and scores. Private Storage would hold source videos and frames, with row-level security scoped to the account/organization. That replaces the local PGlite/media layer without changing the audit contract.
+The main cost and delay is the managed vision request, followed by upload time. To cut latency, reduce the selected-frame count or image resolution. At scale, measure SKU and out-of-stock precision/recall, field-level accuracy, confidence calibration, abstention rate, and rep corrections. A confidence score earns trust only when high-confidence results prove more accurate than low-confidence results.
