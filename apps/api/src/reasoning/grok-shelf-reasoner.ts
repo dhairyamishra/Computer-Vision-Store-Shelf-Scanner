@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { z } from "zod";
 
 import {
   RawShelfAnalysisSchema,
@@ -8,6 +9,8 @@ import {
 } from "@shelf-audit/contracts";
 
 import type { ShelfReasoner } from "./fixture-shelf-reasoner.js";
+
+const rawShelfAnalysisJsonSchema = z.toJSONSchema(RawShelfAnalysisSchema);
 
 export class ReasoningError extends Error {
   constructor(
@@ -135,7 +138,14 @@ export class GrokShelfReasoner implements ShelfReasoner {
           body: JSON.stringify({
             model: this.model,
             temperature: 0,
-            response_format: { type: "json_object" },
+            response_format: {
+              type: "json_schema",
+              json_schema: {
+                name: "shelf_audit_observation",
+                strict: true,
+                schema: rawShelfAnalysisJsonSchema,
+              },
+            },
             messages: [
               {
                 role: "user",
