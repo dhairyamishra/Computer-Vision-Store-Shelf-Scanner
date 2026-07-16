@@ -149,8 +149,8 @@ export async function createApiServer(
   const videoProcessor =
     options.videoProcessor ??
     new FfmpegVideoProcessor({
-      ffmpegPath: process.env.FFMPEG_PATH,
-      ffprobePath: process.env.FFPROBE_PATH,
+      ffmpegPath: process.env.FFMPEG_PATH || undefined,
+      ffprobePath: process.env.FFPROBE_PATH || undefined,
     });
   const reasoner =
     options.reasoner ??
