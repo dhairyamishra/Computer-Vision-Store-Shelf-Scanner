@@ -24,6 +24,7 @@ type ScoredFrame = {
 
 const UNDEREXPOSED_BRIGHTNESS = 0.12;
 const OVEREXPOSED_BRIGHTNESS = 0.9;
+const BLURRY_SHARPNESS = 0.002;
 
 function normalizedEntropy(histogram: number[], count: number): number {
   const entropy = histogram.reduce((total, bucket) => {
@@ -113,7 +114,7 @@ function qualityScore(
   } else if (brightness > OVEREXPOSED_BRIGHTNESS) {
     reasons.push("overexposed");
   }
-  if (sharpnessScore < 0.08) {
+  if (sharpnessScore < BLURRY_SHARPNESS) {
     reasons.push("blurry");
   }
   if (clipping > 0.2) {

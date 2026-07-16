@@ -17,6 +17,7 @@ export const SHELF_AUDIT_UI = `<!doctype html>
     .hint { margin: 8px 0 0; color: #93a4c2; font-size: .88rem; } button { width: 100%; margin-top: 24px; padding: 14px; border: 0; border-radius: 10px; background: #67e8f9; color: #082032; font-weight: 850; cursor: pointer; } button:hover { background: #a5f3fc; } button:disabled { opacity: .6; cursor: progress; }
     .preview { display: none; width: 100%; max-height: 260px; object-fit: contain; border-radius: 12px; margin-top: 16px; background: #060a13; } .preview.show { display: block; }
     #status { min-height: 1.5em; color: #b9c5dc; margin: 20px 0 0; } #result { display: none; margin-top: 24px; } #result.show { display:block; } pre { margin: 0; overflow: auto; padding: 18px; border-radius: 12px; background: #060a13; color: #c7d2fe; font-size: .83rem; line-height: 1.45; }
+    .processing { display: none; align-items: center; gap: 12px; margin-top: 20px; padding: 14px 16px; border-radius: 12px; background: #102942; color: #d8f6ff; font-weight: 700; } .processing.show { display: flex; } .spinner { width: 20px; height: 20px; flex: 0 0 auto; border: 3px solid rgba(103,232,249,.28); border-top-color: #67e8f9; border-radius: 50%; animation: spin .8s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }
     .note { margin-top: 22px; color: #93a4c2; font-size: .86rem; line-height: 1.5; }
   </style>
 </head>
@@ -34,17 +35,19 @@ export const SHELF_AUDIT_UI = `<!doctype html>
         <img id="image-preview" class="preview" alt="Selected shelf photo preview" />
         <button id="submit" type="submit">Submit for analysis</button>
       </form>
+      <div id="processing" class="processing" role="status" aria-live="polite" aria-hidden="true"><span class="spinner" aria-hidden="true"></span><span>Analyzing your media. This can take a moment for video.</span></div>
       <p id="status" role="status"></p>
       <section id="result" aria-label="Audit result"><label>Structured audit</label><pre id="output"></pre></section>
       <p class="note">Grok analyzes selected evidence frames against the account catalog. Findings remain empty when labels are not visually supported; set <code>XAI_API_KEY</code> locally to enable managed vision analysis.</p>
     </section>
   </main>
   <script>
-    const form = document.querySelector('#audit-form'); const account = document.querySelector('#account'); const media = document.querySelector('#media'); const dropZone = document.querySelector('#drop-zone'); const browse = document.querySelector('#browse'); const status = document.querySelector('#status'); const submit = document.querySelector('#submit'); const result = document.querySelector('#result'); const output = document.querySelector('#output'); const preview = document.querySelector('#image-preview'); let selectedFile;
+    const form = document.querySelector('#audit-form'); const account = document.querySelector('#account'); const media = document.querySelector('#media'); const dropZone = document.querySelector('#drop-zone'); const browse = document.querySelector('#browse'); const status = document.querySelector('#status'); const processing = document.querySelector('#processing'); const submit = document.querySelector('#submit'); const result = document.querySelector('#result'); const output = document.querySelector('#output'); const preview = document.querySelector('#image-preview'); let selectedFile;
     async function loadAccounts() { const response = await fetch('/accounts'); const data = await response.json(); account.innerHTML = data.accounts.map(a => '<option value="' + a.id + '">' + a.name + ' · ' + a.region + '</option>').join(''); }
     function setMedia(file, source) { selectedFile = file; if (preview.src) URL.revokeObjectURL(preview.src); if (file && file.type.startsWith('image/')) { preview.src = URL.createObjectURL(file); preview.classList.add('show'); } else { preview.removeAttribute('src'); preview.classList.remove('show'); } status.textContent = file ? source + ': ' + file.name : ''; }
     media.addEventListener('change', () => setMedia(media.files[0], 'Selected'));
     browse.addEventListener('click', () => media.click());
+    form.addEventListener('submit', () => { if (!(selectedFile || media.files[0])) return; processing.classList.add('show'); processing.setAttribute('aria-hidden', 'false'); const timer = setInterval(() => { if (submit.disabled) return; processing.classList.remove('show'); processing.setAttribute('aria-hidden', 'true'); clearInterval(timer); }, 100); });
     ['dragenter', 'dragover'].forEach(type => dropZone.addEventListener(type, event => { event.preventDefault(); dropZone.classList.add('dragging'); }));
     ['dragleave', 'drop'].forEach(type => dropZone.addEventListener(type, event => { event.preventDefault(); dropZone.classList.remove('dragging'); }));
     dropZone.addEventListener('drop', event => { const file = [...event.dataTransfer.files].find(candidate => candidate.type.startsWith('image/') || candidate.type.startsWith('video/')); if (file) setMedia(file, 'Dropped'); else status.textContent = 'Drop a supported image or video file.'; });

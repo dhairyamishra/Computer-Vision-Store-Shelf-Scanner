@@ -47,6 +47,16 @@ export function filterVisualWarnings(warnings: readonly string[]): string[] {
   );
 }
 
+export function resolveCaptureQualityStatus(
+  localStatus: "usable" | "degraded" | "unusable",
+  visualWarningCount: number,
+): "usable" | "degraded" | "unusable" {
+  if (localStatus !== "usable") {
+    return localStatus;
+  }
+  return visualWarningCount > 0 ? "degraded" : "usable";
+}
+
 const outsideKnowledgePattern =
   /\b(known for|typically|common knowledge|generally known|brand familiarity)\b/i;
 
@@ -365,6 +375,9 @@ export class GrokShelfReasoner implements ShelfReasoner {
           catalogCandidates,
         };
       });
+      const modelVisualWarnings = filterVisualWarnings(
+        analysis.captureQuality.warnings,
+      );
       return ShelfAuditSchema.parse({
         auditId: input.auditId,
         schemaVersion: SHELF_AUDIT_SCHEMA_VERSION,
@@ -381,11 +394,14 @@ export class GrokShelfReasoner implements ShelfReasoner {
           status: catalogScope.status,
         },
         captureQuality: {
-          status: input.captureQuality.status,
+          status: resolveCaptureQualityStatus(
+            input.captureQuality.status,
+            modelVisualWarnings.length,
+          ),
           warnings: combineCaptureWarnings(
             input.metadata.warnings,
             input.captureQuality.warnings,
-            filterVisualWarnings(analysis.captureQuality.warnings),
+            modelVisualWarnings,
           ),
         },
         observations,

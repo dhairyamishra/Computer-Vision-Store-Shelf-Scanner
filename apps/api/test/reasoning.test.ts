@@ -4,6 +4,7 @@ import {
   combineCaptureWarnings,
   filterVisualWarnings,
   removeKnowledgeBasedClaims,
+  resolveCaptureQualityStatus,
   repairMojibake,
   resolveCatalogScope,
 } from "../src/reasoning/grok-shelf-reasoner.js";
@@ -64,6 +65,12 @@ describe("provider text normalization", () => {
         "Local detector failed.",
       ]),
     ).toEqual(["Lower shelf labels are blurred."]);
+  });
+
+  it("downgrades locally usable evidence when the model reports visual limits", () => {
+    expect(resolveCaptureQualityStatus("usable", 1)).toBe("degraded");
+    expect(resolveCaptureQualityStatus("usable", 0)).toBe("usable");
+    expect(resolveCaptureQualityStatus("unusable", 2)).toBe("unusable");
   });
 });
 
