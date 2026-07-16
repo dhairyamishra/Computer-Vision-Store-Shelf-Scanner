@@ -28,18 +28,10 @@ import {
 import {
   FfmpegVideoProcessor,
   VideoProcessingError,
-  selectQualityAwareFrames,
+  selectVideoEvidenceFrames,
   type VideoProcessor,
 } from "../video/index.js";
 import type { CandidateFrame, VideoMetadata } from "../video/types.js";
-import {
-  createDetectionCrops,
-  DEFAULT_DETECTOR_MODEL,
-  DetectorUnavailableError,
-  runLocalDetection,
-  TransformersLocalDetector,
-  type LocalDetector,
-} from "../perception/index.js";
 import { SHELF_AUDIT_UI } from "./ui.js";
 
 type ErrorPayload = {
@@ -53,7 +45,6 @@ export type CreateApiServerOptions = {
   maxDurationMs?: number;
   videoProcessor?: VideoProcessor;
   reasoner?: ShelfReasoner;
-  localDetector?: LocalDetector;
 };
 
 const defaultMaxUploadBytes = 100 * 1024 * 1024;
@@ -159,20 +150,6 @@ export async function createApiServer(
       : new GrokShelfReasoner({
           apiKey: process.env.XAI_API_KEY,
           model: process.env.XAI_MODEL,
-        }));
-  const localDetector =
-    options.localDetector ??
-    (options.mode === "test"
-      ? {
-          version: DEFAULT_DETECTOR_MODEL,
-          detect: async () => {
-            throw new DetectorUnavailableError(
-              "Detector loading is disabled in test mode.",
-            );
-          },
-        }
-      : new TransformersLocalDetector({
-          cacheDirectory: join(DEFAULT_DATA_DIRECTORY, "model-cache"),
         }));
   const maxUploadBytes = options.maxUploadBytes ?? defaultMaxUploadBytes;
   const maxDurationMs = options.maxDurationMs ?? defaultMaxDurationMs;
@@ -340,33 +317,44 @@ export async function createApiServer(
         audit.id,
         "selecting_frames",
       );
-      const selectedFrames = await selectQualityAwareFrames(frames);
-      await dependencies.repository.transitionAudit(
-        audit.id,
-        "local_detection",
-      );
-      const detector = await runLocalDetection(localDetector, selectedFrames);
-      const crops = detector.available
-        ? await createDetectionCrops(
-            selectedFrames,
-            detector.detections,
-            join(frameDirectory, "..", "crops"),
-          )
-        : [];
+      const selection = await selectVideoEvidenceFrames(frames);
+      const selectedFrames = selection.inferenceFrames;
+      const evidenceCoverage = {
+        sourceDurationMs: metadata.durationMs,
+        retainedFrameCount: selection.retainedFrames.length,
+        analyzedFrameCount: selectedFrames.length,
+        firstAnalyzedTimestampMs: selectedFrames[0]?.timestampMs ?? null,
+        lastAnalyzedTimestampMs: selectedFrames.at(-1)?.timestampMs ?? null,
+        strategy: isImage
+          ? ("single_image" as const)
+          : ("per_second_quality_scene_change" as const),
+      };
       await dependencies.repository.recordProcessingMetadata(audit.id, {
-        frameSelection: selectedFrames.map((frame) => ({
+        retainedFrames: selection.retainedFrames.map((frame) => ({
           frameId: frame.frameId,
           timestampMs: frame.timestampMs,
           fileName: frame.fileName,
           selection: frame.selection,
         })),
-        detector: {
-          available: detector.available,
-          version: detector.version,
-          warnings: detector.warnings,
-          detectionCount: detector.detections.length,
-          crops,
-        },
+        inferenceFrames: selectedFrames.map((frame) => ({
+          frameId: frame.frameId,
+          timestampMs: frame.timestampMs,
+          fileName: frame.fileName,
+          selection: frame.selection,
+        })),
+        excludedFrames: selection.retainedFrames
+          .filter(
+            (frame) =>
+              !selectedFrames.some(
+                (selected) => selected.frameId === frame.frameId,
+              ),
+          )
+          .map((frame) => ({
+            frameId: frame.frameId,
+            timestampMs: frame.timestampMs,
+            reason:
+              "Not selected after temporal coverage and scene-change ranking.",
+          })),
       });
       await dependencies.repository.transitionAudit(
         audit.id,
@@ -381,16 +369,11 @@ export async function createApiServer(
         sourceVideoPath: storedVideo.mediaPath,
         metadata,
         frames: selectedFrames,
-        qualityWarnings: selectedFrames.flatMap((frame) =>
-          frame.selection.reasons
-            .filter(
-              (reason) =>
-                reason !== "temporal coverage" &&
-                reason !== "best quality in temporal segment",
-            )
-            .map((reason) => `Frame ${frame.frameId}: ${reason}.`),
-        ),
-        detector,
+        captureQuality: {
+          status: selection.qualityStatus,
+          warnings: selection.qualityWarnings,
+        },
+        evidenceCoverage,
       });
       await dependencies.repository.transitionAudit(audit.id, "grounding");
       await dependencies.repository.transitionAudit(audit.id, "persisting");

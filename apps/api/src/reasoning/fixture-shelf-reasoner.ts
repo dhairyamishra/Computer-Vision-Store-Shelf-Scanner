@@ -1,6 +1,7 @@
 import {
   SHELF_AUDIT_SCHEMA_VERSION,
   ShelfAuditSchema,
+  type EvidenceCoverage,
   type ShelfAudit,
 } from "@shelf-audit/contracts";
 
@@ -9,7 +10,6 @@ import type {
   AccountAssortmentItem,
 } from "../persistence/audit-repository.js";
 import type { CandidateFrame, VideoMetadata } from "../video/types.js";
-import type { DetectorRun } from "../perception/local-detector.js";
 
 export interface ShelfReasoner {
   readonly provider?: string;
@@ -20,8 +20,11 @@ export interface ShelfReasoner {
     sourceVideoPath: string;
     metadata: VideoMetadata;
     frames: CandidateFrame[];
-    qualityWarnings?: string[];
-    detector?: Pick<DetectorRun, "available" | "version" | "warnings">;
+    captureQuality: {
+      status: "usable" | "degraded" | "unusable";
+      warnings: string[];
+    };
+    evidenceCoverage: EvidenceCoverage;
     assortment?: AccountAssortmentItem[];
   }): Promise<ShelfAudit>;
 }
@@ -35,8 +38,11 @@ export class FixtureShelfReasoner implements ShelfReasoner {
     sourceVideoPath: string;
     metadata: VideoMetadata;
     frames: CandidateFrame[];
-    qualityWarnings?: string[];
-    detector?: Pick<DetectorRun, "available" | "version" | "warnings">;
+    captureQuality: {
+      status: "usable" | "degraded" | "unusable";
+      warnings: string[];
+    };
+    evidenceCoverage: EvidenceCoverage;
   }): Promise<ShelfAudit> {
     return ShelfAuditSchema.parse({
       auditId: input.auditId,
@@ -47,17 +53,17 @@ export class FixtureShelfReasoner implements ShelfReasoner {
       },
       sourceVideo: { mediaPath: input.sourceVideoPath },
       status: "completed",
+      evidenceCoverage: input.evidenceCoverage,
       catalogScope: {
         observedCategory: "unknown",
         catalogCategory: null,
         status: "no_matching_catalog",
       },
       captureQuality: {
-        status: input.metadata.warnings.length > 0 ? "degraded" : "usable",
+        status: input.captureQuality.status,
         warnings: [
           ...input.metadata.warnings,
-          ...(input.qualityWarnings ?? []),
-          ...(input.detector?.warnings ?? []),
+          ...input.captureQuality.warnings,
           `Fixture analysis used ${input.frames.length} representative frame(s).`,
         ],
       },
@@ -69,7 +75,6 @@ export class FixtureShelfReasoner implements ShelfReasoner {
         pipelineVersion: "fixture-v1",
         provider: "fixture",
         model: "deterministic",
-        ...(input.detector ? { detectorVersion: input.detector.version } : {}),
       },
     });
   }

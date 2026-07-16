@@ -164,9 +164,7 @@ export class FfmpegVideoProcessor implements VideoProcessor {
         "-i",
         inputPath,
         "-vf",
-        "fps=1",
-        "-frames:v",
-        "12",
+        "fps=2",
         "-y",
         temporaryPattern,
       ]);
@@ -190,7 +188,7 @@ export class FfmpegVideoProcessor implements VideoProcessor {
     return Promise.all(
       extracted.map(async (temporaryName, index) => {
         const timestampMs = Math.min(
-          index * 1_000,
+          index * 500,
           Math.max(0, metadata.durationMs - 1),
         );
         const fileName = `frame-${timestampMs.toString().padStart(9, "0")}.png`;

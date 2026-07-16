@@ -155,6 +155,15 @@ export const CatalogScopeSchema = z.object({
   status: z.enum(["applied", "no_matching_catalog"]),
 });
 
+export const EvidenceCoverageSchema = z.object({
+  sourceDurationMs: z.number().int().positive(),
+  retainedFrameCount: z.number().int().nonnegative(),
+  analyzedFrameCount: z.number().int().nonnegative(),
+  firstAnalyzedTimestampMs: z.number().int().nonnegative().nullable(),
+  lastAnalyzedTimestampMs: z.number().int().nonnegative().nullable(),
+  strategy: z.enum(["single_image", "per_second_quality_scene_change"]),
+});
+
 export const OutOfStockSchema = z
   .object({
     expectedProductId: z.string().min(1),
@@ -214,6 +223,7 @@ export const ShelfAuditSchema = z.object({
   }),
   status: AuditRunStatusSchema,
   catalogScope: CatalogScopeSchema,
+  evidenceCoverage: EvidenceCoverageSchema,
   captureQuality: CaptureQualitySchema,
   observations: z.array(RawProductObservationSchema),
   outOfStocks: z.array(OutOfStockSchema),
@@ -229,5 +239,6 @@ export const ShelfAuditSchema = z.object({
 });
 
 export type EvidenceRef = z.infer<typeof EvidenceRefSchema>;
+export type EvidenceCoverage = z.infer<typeof EvidenceCoverageSchema>;
 export type RawShelfAnalysis = z.infer<typeof RawShelfAnalysisSchema>;
 export type ShelfAudit = z.infer<typeof ShelfAuditSchema>;

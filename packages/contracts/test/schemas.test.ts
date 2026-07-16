@@ -124,6 +124,14 @@ describe("shared shelf-audit contracts", () => {
           mediaPath: "uploads/audit-001.mp4",
         },
         status: "completed",
+        evidenceCoverage: {
+          sourceDurationMs: 3_000,
+          retainedFrameCount: 3,
+          analyzedFrameCount: 3,
+          firstAnalyzedTimestampMs: 0,
+          lastAnalyzedTimestampMs: 2_000,
+          strategy: "per_second_quality_scene_change",
+        },
         catalogScope: {
           observedCategory: "spirits",
           catalogCategory: null,

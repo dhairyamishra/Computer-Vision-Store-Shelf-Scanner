@@ -6,6 +6,7 @@ export {
 export {
   scoreFrameQuality,
   selectQualityAwareFrames,
+  selectVideoEvidenceFrames,
   selectRepresentativeFrames,
   type FrameQualityScore,
   type SelectedFrame,

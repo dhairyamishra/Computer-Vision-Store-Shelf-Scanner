@@ -7,7 +7,7 @@ const nextAuditStatuses: Readonly<
   uploading: ["uploaded", "failed"],
   uploaded: ["extracting_frames", "failed"],
   extracting_frames: ["selecting_frames", "failed"],
-  selecting_frames: ["local_detection", "failed"],
+  selecting_frames: ["managed_reasoning", "failed"],
   local_detection: ["managed_reasoning", "failed"],
   managed_reasoning: ["grounding", "failed"],
   grounding: ["persisting", "failed"],

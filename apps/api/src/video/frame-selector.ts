@@ -8,6 +8,7 @@ export type FrameQualityScore = {
   clipping: number;
   entropy: number;
   score: number;
+  sceneChange?: number;
   reasons: string[];
 };
 
@@ -23,8 +24,6 @@ type ScoredFrame = {
 
 const UNDEREXPOSED_BRIGHTNESS = 0.12;
 const OVEREXPOSED_BRIGHTNESS = 0.9;
-const DUPLICATE_DISTANCE = 0.035;
-const DUPLICATE_MAX_GAP_MS = 750;
 
 function normalizedEntropy(histogram: number[], count: number): number {
   const entropy = histogram.reduce((total, bucket) => {
@@ -196,24 +195,177 @@ async function scoreFrames(frames: CandidateFrame[]): Promise<ScoredFrame[]> {
   );
 }
 
-function deduplicate(scored: ScoredFrame[]): ScoredFrame[] {
-  const kept: ScoredFrame[] = [];
+function isUsable(quality: FrameQualityScore): boolean {
+  return !quality.reasons.some((reason) =>
+    ["blurry", "underexposed", "overexposed", "high clipping"].includes(reason),
+  );
+}
+
+function asSelected(
+  scored: ScoredFrame,
+  reasons: string[],
+  sceneChange?: number,
+): SelectedFrame {
+  return {
+    ...scored.frame,
+    selection: {
+      ...scored.quality,
+      ...(sceneChange === undefined ? {} : { sceneChange }),
+      reasons: [...scored.quality.reasons, ...reasons],
+    },
+  };
+}
+
+export type VideoEvidenceSelection = {
+  retainedFrames: SelectedFrame[];
+  inferenceFrames: SelectedFrame[];
+  qualityStatus: "usable" | "degraded" | "unusable";
+  qualityWarnings: string[];
+};
+
+function selectBestPerSecond(scored: ScoredFrame[]): ScoredFrame[] {
+  const groups = new Map<number, ScoredFrame[]>();
   for (const candidate of scored) {
-    const duplicateOf = kept.find(
-      (existing) =>
-        existing.fingerprint.length > 0 &&
-        Math.abs(existing.frame.timestampMs - candidate.frame.timestampMs) <=
-          DUPLICATE_MAX_GAP_MS &&
-        fingerprintDistance(existing.fingerprint, candidate.fingerprint) <
-          DUPLICATE_DISTANCE,
+    const second = Math.floor(candidate.frame.timestampMs / 1_000);
+    groups.set(second, [...(groups.get(second) ?? []), candidate]);
+  }
+  return [...groups.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([second, candidates]) => {
+      const usable = candidates.filter((candidate) =>
+        isUsable(candidate.quality),
+      );
+      const best = [...(usable.length > 0 ? usable : candidates)].sort(
+        (left, right) => right.quality.score - left.quality.score,
+      )[0];
+      return {
+        ...best,
+        quality: {
+          ...best.quality,
+          reasons: [
+            ...best.quality.reasons,
+            usable.length > 0
+              ? `best usable frame for second ${second}`
+              : `best available frame for second ${second}`,
+          ],
+        },
+      };
+    });
+}
+
+function selectInferenceFrames(retained: ScoredFrame[], maximumFrames: number) {
+  if (retained.length <= maximumFrames) {
+    return retained.map((frame, index) =>
+      asSelected(
+        frame,
+        ["selected for full-duration coverage"],
+        index === 0
+          ? 0
+          : fingerprintDistance(
+              retained[index - 1].fingerprint,
+              frame.fingerprint,
+            ),
+      ),
     );
-    if (!duplicateOf) {
-      kept.push(candidate);
-    } else if (candidate.quality.score > duplicateOf.quality.score) {
-      kept.splice(kept.indexOf(duplicateOf), 1, candidate);
+  }
+
+  const selected = new Map<number, SelectedFrame>();
+  selected.set(
+    0,
+    asSelected(retained[0], ["selected as first evidence frame"], 0),
+  );
+  const lastIndex = retained.length - 1;
+  selected.set(
+    lastIndex,
+    asSelected(
+      retained[lastIndex],
+      ["selected as last evidence frame"],
+      fingerprintDistance(
+        retained[lastIndex - 1].fingerprint,
+        retained[lastIndex].fingerprint,
+      ),
+    ),
+  );
+  const interiorBuckets = Math.max(0, maximumFrames - selected.size);
+  for (let bucket = 0; bucket < interiorBuckets; bucket += 1) {
+    const start =
+      1 + Math.floor((bucket * (retained.length - 2)) / interiorBuckets);
+    const end = Math.max(
+      start + 1,
+      1 + Math.floor(((bucket + 1) * (retained.length - 2)) / interiorBuckets),
+    );
+    const candidates = retained.slice(start, end);
+    const chosen = candidates
+      .map((candidate, index) => {
+        const retainedIndex = start + index;
+        const sceneChange = fingerprintDistance(
+          retained[retainedIndex - 1].fingerprint,
+          candidate.fingerprint,
+        );
+        return { candidate, sceneChange };
+      })
+      .sort(
+        (left, right) =>
+          right.sceneChange * 0.7 +
+          right.candidate.quality.score * 0.3 -
+          (left.sceneChange * 0.7 + left.candidate.quality.score * 0.3),
+      )[0];
+    if (chosen) {
+      const retainedIndex = retained.indexOf(chosen.candidate);
+      selected.set(
+        retainedIndex,
+        asSelected(
+          chosen.candidate,
+          ["selected for temporal coverage and scene change"],
+          chosen.sceneChange,
+        ),
+      );
     }
   }
-  return kept;
+  return [...selected.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([, frame]) => frame);
+}
+
+export async function selectVideoEvidenceFrames(
+  frames: CandidateFrame[],
+  maximumFrames = 12,
+): Promise<VideoEvidenceSelection> {
+  if (frames.length === 0) {
+    return {
+      retainedFrames: [],
+      inferenceFrames: [],
+      qualityStatus: "unusable",
+      qualityWarnings: [
+        "No evidence frames could be extracted from the video.",
+      ],
+    };
+  }
+  const retained = selectBestPerSecond(await scoreFrames(frames));
+  const unusableFrames = retained.filter((frame) => !isUsable(frame.quality));
+  const retainedFrames = retained.map((frame) => asSelected(frame, []));
+  const qualityStatus =
+    unusableFrames.length === retained.length
+      ? "unusable"
+      : unusableFrames.length > 0
+        ? "degraded"
+        : "usable";
+  const qualityWarnings =
+    unusableFrames.length === 0
+      ? []
+      : [
+          `${unusableFrames.length} one-second interval(s) lacked a usable frame.`,
+          ...unusableFrames.slice(0, 10).map((frame) => {
+            const second = Math.floor(frame.frame.timestampMs / 1_000);
+            return `Second ${second}: ${frame.quality.reasons.filter((reason) => reason !== "temporal coverage").join(", ")}.`;
+          }),
+        ];
+  return {
+    retainedFrames,
+    inferenceFrames: selectInferenceFrames(retained, maximumFrames),
+    qualityStatus,
+    qualityWarnings,
+  };
 }
 
 /**
@@ -225,47 +377,8 @@ export async function selectQualityAwareFrames(
   frames: CandidateFrame[],
   maximumFrames = 8,
 ): Promise<SelectedFrame[]> {
-  if (frames.length === 0 || maximumFrames <= 0) {
-    return [];
-  }
-  const unique = deduplicate(await scoreFrames(frames));
-  const selectionCount = Math.min(maximumFrames, unique.length);
-  const firstTimestamp = unique[0].frame.timestampMs;
-  const lastTimestamp = unique.at(-1)?.frame.timestampMs ?? firstTimestamp;
-  const duration = Math.max(1, lastTimestamp - firstTimestamp);
-  const selected: ScoredFrame[] = [];
-
-  for (let segment = 0; segment < selectionCount; segment += 1) {
-    const start = segment / selectionCount;
-    const end = (segment + 1) / selectionCount;
-    const candidates = unique.filter((candidate) => {
-      const position =
-        (candidate.frame.timestampMs - firstTimestamp) / duration;
-      return (
-        position >= start &&
-        (segment === selectionCount - 1 ? position <= end : position < end)
-      );
-    });
-    const fallback = unique.filter(
-      (candidate) => !selected.includes(candidate),
-    );
-    const best = [...(candidates.length > 0 ? candidates : fallback)].sort(
-      (left, right) => right.quality.score - left.quality.score,
-    )[0];
-    if (best && !selected.includes(best)) {
-      selected.push(best);
-    }
-  }
-
-  return selected
-    .sort((left, right) => left.frame.timestampMs - right.frame.timestampMs)
-    .map(({ frame, quality }) => ({
-      ...frame,
-      selection: {
-        ...quality,
-        reasons: [...quality.reasons, "best quality in temporal segment"],
-      },
-    }));
+  return (await selectVideoEvidenceFrames(frames, maximumFrames))
+    .inferenceFrames;
 }
 
 /** Backwards-compatible temporal-only selector for callers without local files. */

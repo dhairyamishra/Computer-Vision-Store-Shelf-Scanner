@@ -38,9 +38,9 @@ describe("video processing", () => {
     const frames = await extractFixtureFrames(fixturePath);
 
     expect(frames.metadata.durationMs).toBeGreaterThan(1_000);
-    expect(frames.frames).toHaveLength(3);
+    expect(frames.frames).toHaveLength(6);
     expect(frames.frames.map((frame) => frame.timestampMs)).toEqual([
-      0, 1_000, 2_000,
+      0, 500, 1_000, 1_500, 2_000, 2_500,
     ]);
     expect(
       frames.frames.every((frame) => frame.fileName.includes("frame-")),
@@ -128,8 +128,20 @@ describe("Fastify audit API", () => {
       expect(audit.json()).toMatchObject({
         status: "completed",
         stageLatencies: { totalMs: expect.any(Number) },
-        finalAudit: { auditId, schemaVersion: "1.0" },
+        finalAudit: {
+          auditId,
+          schemaVersion: "1.0",
+          evidenceCoverage: {
+            strategy: "per_second_quality_scene_change",
+            retainedFrameCount: expect.any(Number),
+            analyzedFrameCount: expect.any(Number),
+          },
+        },
       });
+      expect(audit.json().processingMetadata).not.toHaveProperty("detector");
+      expect(audit.json().finalAudit.provenance).not.toHaveProperty(
+        "detectorVersion",
+      );
 
       const failingServer = await createApiServer({
         mode: "test",

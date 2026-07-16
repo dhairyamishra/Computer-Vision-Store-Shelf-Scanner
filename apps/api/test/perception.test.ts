@@ -1,27 +1,20 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import sharp from "sharp";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
   selectQualityAwareFrames,
+  selectVideoEvidenceFrames,
   scoreFrameQuality,
 } from "../src/video/frame-selector.js";
 import {
-  DetectorUnavailableError,
   normalizeDetectionBox,
   runLocalDetection,
-  type LocalDetector,
 } from "../src/perception/index.js";
-import { createApiServer } from "../src/server/index.js";
-
 const temporaryDirectories: string[] = [];
-const fixturePath = fileURLToPath(
-  new URL("./fixtures/three-colors.mp4", import.meta.url),
-);
 
 afterEach(async () => {
   await Promise.all(
@@ -69,20 +62,6 @@ async function createImage(
   const output = sharp(rendered);
   await (options.blur ? output.blur(options.blur) : output).png().toFile(path);
   return path;
-}
-
-function multipartPayload(video: Buffer) {
-  const boundary = "shelf-audit-perception-boundary";
-  return {
-    payload: Buffer.concat([
-      Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; name="accountId"\r\n\r\naccount-northside-market\r\n--${boundary}\r\nContent-Disposition: form-data; name="video"; filename="fixture.mp4"\r\nContent-Type: video/mp4\r\n\r\n`,
-      ),
-      video,
-      Buffer.from(`\r\n--${boundary}--\r\n`),
-    ]),
-    contentType: `multipart/form-data; boundary=${boundary}`,
-  };
 }
 
 describe("quality-aware frame selection", () => {
@@ -165,6 +144,99 @@ describe("quality-aware frame selection", () => {
       true,
     );
   });
+
+  it("retains one frame per second and bounds longer-video inference", async () => {
+    const clearPath = await createImage("coverage.png", {
+      brightness: 0.6,
+      pattern: true,
+    });
+    const frames = Array.from({ length: 30 }, (_, index) => ({
+      frameId: `frame-${index}`,
+      timestampMs: index * 500,
+      fileName: `frame-${index}.png`,
+      filePath: clearPath,
+    }));
+    const selection = await selectVideoEvidenceFrames(frames);
+
+    expect(selection.retainedFrames).toHaveLength(15);
+    expect(selection.inferenceFrames).toHaveLength(12);
+    expect(selection.inferenceFrames[0].timestampMs).toBe(0);
+    expect(selection.inferenceFrames.at(-1)?.timestampMs).toBe(14_000);
+    expect(selection.qualityStatus).toBe("usable");
+  });
+
+  it("analyzes every retained second of a nine-second video", async () => {
+    const clearPath = await createImage("nine-seconds.png", {
+      brightness: 0.6,
+      pattern: true,
+    });
+    const selection = await selectVideoEvidenceFrames(
+      Array.from({ length: 18 }, (_, index) => ({
+        frameId: `frame-${index}`,
+        timestampMs: index * 500,
+        fileName: `frame-${index}.png`,
+        filePath: clearPath,
+      })),
+    );
+
+    expect(selection.retainedFrames).toHaveLength(9);
+    expect(selection.inferenceFrames).toHaveLength(9);
+    expect(selection.inferenceFrames[0].timestampMs).toBe(0);
+    expect(selection.inferenceFrames.at(-1)?.timestampMs).toBe(8_000);
+  });
+
+  it("marks evidence as degraded when a second has no usable candidate", async () => {
+    const clearPath = await createImage("clear-quality.png", {
+      brightness: 0.6,
+      pattern: true,
+    });
+    const blurredPath = await createImage("blurred-quality.png", {
+      brightness: 0.6,
+      pattern: true,
+      blur: 8,
+    });
+    const selection = await selectVideoEvidenceFrames([
+      {
+        frameId: "clear",
+        timestampMs: 0,
+        fileName: "clear.png",
+        filePath: clearPath,
+      },
+      {
+        frameId: "blurred",
+        timestampMs: 1_000,
+        fileName: "blurred.png",
+        filePath: blurredPath,
+      },
+    ]);
+
+    expect(selection.qualityStatus).toBe("degraded");
+    expect(selection.qualityWarnings.join(" ")).toContain("lacked a usable");
+  });
+
+  it("marks evidence as unusable when every retained frame is blurry", async () => {
+    const blurredPath = await createImage("all-blurred.png", {
+      brightness: 0.6,
+      pattern: true,
+      blur: 8,
+    });
+    const selection = await selectVideoEvidenceFrames([
+      {
+        frameId: "one",
+        timestampMs: 0,
+        fileName: "one.png",
+        filePath: blurredPath,
+      },
+      {
+        frameId: "two",
+        timestampMs: 1_000,
+        fileName: "two.png",
+        filePath: blurredPath,
+      },
+    ]);
+
+    expect(selection.qualityStatus).toBe("unusable");
+  });
 });
 
 describe("local detector boundary", () => {
@@ -197,50 +269,5 @@ describe("local detector boundary", () => {
       region: { xMin: 0, yMin: 0.2, xMax: 1, yMax: 0.8 },
     });
     expect(result.detections[0]).not.toHaveProperty("productId");
-  });
-
-  it("completes fixture processing with a detector-unavailable warning", async () => {
-    const unavailableDetector: LocalDetector = {
-      version: "Xenova/detr-resnet-50",
-      detect: async () => {
-        throw new DetectorUnavailableError("Model download unavailable.");
-      },
-    };
-    const server = await createApiServer({
-      mode: "test",
-      localDetector: unavailableDetector,
-    });
-    try {
-      const upload = multipartPayload(
-        await (await import("node:fs/promises")).readFile(fixturePath),
-      );
-      const created = await server.inject({
-        method: "POST",
-        url: "/audits",
-        payload: upload.payload,
-        headers: { "content-type": upload.contentType },
-      });
-      expect(created.statusCode).toBe(201);
-      const audit = await server.inject({
-        method: "GET",
-        url: `/audits/${created.json<{ auditId: string }>().auditId}`,
-      });
-      expect(audit.json()).toMatchObject({
-        status: "completed",
-        finalAudit: {
-          captureQuality: {
-            warnings: expect.arrayContaining([
-              expect.stringContaining("Local detector unavailable"),
-            ]),
-          },
-          provenance: { detectorVersion: "Xenova/detr-resnet-50" },
-        },
-        processingMetadata: {
-          detector: { available: false, version: "Xenova/detr-resnet-50" },
-        },
-      });
-    } finally {
-      await server.close();
-    }
   });
 });

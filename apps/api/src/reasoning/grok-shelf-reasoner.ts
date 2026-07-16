@@ -12,6 +12,86 @@ import type { ShelfReasoner } from "./fixture-shelf-reasoner.js";
 import type { AccountAssortmentItem } from "../persistence/audit-repository.js";
 
 const rawShelfAnalysisJsonSchema = z.toJSONSchema(RawShelfAnalysisSchema);
+const mojibakeMarkers = /[ÃÂ]|â(?:€|€™|€œ|€)/g;
+
+function corruptionCount(value: string): number {
+  return (value.match(mojibakeMarkers) ?? []).length;
+}
+
+export function repairMojibake(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(repairMojibake);
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, repairMojibake(item)]),
+    );
+  }
+  if (
+    typeof value !== "string" ||
+    corruptionCount(value) === 0 ||
+    [...value].some((character) => character.codePointAt(0)! > 255)
+  ) {
+    return value;
+  }
+  const repaired = Buffer.from(value, "latin1").toString("utf8");
+  return corruptionCount(repaired) < corruptionCount(value) ? repaired : value;
+}
+
+export function filterVisualWarnings(warnings: readonly string[]): string[] {
+  return warnings.filter(
+    (warning) =>
+      !/\b(catalog|detector|system|provider|api|model|account)\b/i.test(
+        warning,
+      ),
+  );
+}
+
+const outsideKnowledgePattern =
+  /\b(known for|typically|common knowledge|generally known|brand familiarity)\b/i;
+
+export function removeKnowledgeBasedClaims(candidate: unknown): unknown {
+  if (!candidate || typeof candidate !== "object") {
+    return candidate;
+  }
+  const analysis = candidate as Record<string, unknown>;
+  if (!Array.isArray(analysis.observations)) {
+    return analysis;
+  }
+  for (const observation of analysis.observations) {
+    if (!observation || typeof observation !== "object") {
+      continue;
+    }
+    for (const field of [
+      "brand",
+      "product",
+      "variant",
+      "sizeOrPack",
+      "facings",
+      "shelfPosition",
+    ]) {
+      const claim = (observation as Record<string, unknown>)[field];
+      if (
+        !claim ||
+        typeof claim !== "object" ||
+        !outsideKnowledgePattern.test(
+          (claim as Record<string, unknown>).reason as string,
+        )
+      ) {
+        continue;
+      }
+      Object.assign(claim, {
+        value: null,
+        status: "not_observable",
+        confidence: 0,
+        confidenceLevel: "low",
+        reason: "The supplied images do not visibly support this field.",
+        evidence: [],
+      });
+    }
+  }
+  return analysis;
+}
 
 export class ReasoningError extends Error {
   constructor(
@@ -201,7 +281,7 @@ export class GrokShelfReasoner implements ShelfReasoner {
       variant: item.variant,
       size: item.size,
     }));
-    const prompt = `Read this retail shelf conservatively. Return JSON only, with no Markdown. The required top-level object is {schemaVersion:"1.0",observedCategory,captureQuality:{status,warnings},observations,notes}. observedCategory MUST name the visible merchandise category, such as stationery, beverages, or unknown; it is not constrained by the supplied catalog. captureQuality.status MUST be usable, degraded, or unusable. Every observation MUST contain observationId, matchLevel (exact_sku|product_family|brand_only|unknown), brand, product, variant, sizeOrPack, facings, shelfPosition, and catalogCandidates. Every claim MUST contain value, status, confidence, confidenceLevel, reason, and evidence. Valid claim statuses are observed, inferred, uncertain, not_observable, not_applicable. confidenceLevel MUST be low for confidence below .5, medium for .5 through below .8, high for .8 or above. For not_observable or not_applicable, value MUST be null. shelfPosition.value must be top, eye_level, waist_level, bottom, endcap, or unknown. evidence is an array of {frameId,timestampMs,description}, using only supplied frame IDs. catalogCandidates is an array of {productId,score,reason}; use only supplied catalog productIds AND only for catalog products in the observedCategory. Always include every field, using null plus not_observable when the footage cannot support a read. Never invent unreadable labels, SKU matches, or out-of-stocks. Catalog: ${JSON.stringify(catalog)}. Frames: ${JSON.stringify(input.frames.map(({ frameId, timestampMs }) => ({ frameId, timestampMs })))}.`;
+    const prompt = `Read this retail shelf conservatively. Return JSON only, with no Markdown. The required top-level object is {schemaVersion:"1.0",observedCategory,captureQuality:{status,warnings},observations,notes}. observedCategory MUST name the visible merchandise category, such as stationery, beverages, or unknown; it is not constrained by the supplied catalog. captureQuality.warnings may describe only visible optical or coverage limits, never catalog, account, API, model, detector, or system state. Every observation MUST contain observationId, matchLevel (exact_sku|product_family|brand_only|unknown), brand, product, variant, sizeOrPack, facings, shelfPosition, and catalogCandidates. Every claim MUST contain value, status, confidence, confidenceLevel, reason, and evidence. Valid claim statuses are observed, inferred, uncertain, not_observable, not_applicable. confidenceLevel MUST be low for confidence below .5, medium for .5 through below .8, high for .8 or above. For not_observable or not_applicable, value MUST be null. shelfPosition.value must be top, eye_level, waist_level, bottom, endcap, or unknown. evidence is an array of {frameId,timestampMs,description}, using only supplied frame IDs. catalogCandidates is an array of {productId,score,reason}; use only supplied catalog productIds AND only for catalog products in the observedCategory. Claims must be based only on readable text, visible packaging, or counted facings in the supplied images. Do not use brand familiarity or outside product knowledge to fill unreadable product, variant, size, or facing fields. Always include every field, using null plus not_observable when the footage cannot support a read. Never invent unreadable labels, SKU matches, or out-of-stocks. Catalog: ${JSON.stringify(catalog)}. Frames: ${JSON.stringify(input.frames.map(({ frameId, timestampMs }) => ({ frameId, timestampMs })))}.`;
     let response: Response;
     try {
       response = await (this.options.fetch ?? fetch)(
@@ -260,7 +340,9 @@ export class GrokShelfReasoner implements ShelfReasoner {
         notes?: unknown;
       };
       const analysis = RawShelfAnalysisSchema.parse(
-        normalizeProviderOutput(candidate),
+        removeKnowledgeBasedClaims(
+          normalizeProviderOutput(repairMojibake(candidate)),
+        ),
       );
       const catalogScope = resolveCatalogScope(
         analysis.observedCategory,
@@ -292,18 +374,18 @@ export class GrokShelfReasoner implements ShelfReasoner {
         },
         sourceVideo: { mediaPath: input.sourceVideoPath },
         status: "completed",
+        evidenceCoverage: input.evidenceCoverage,
         catalogScope: {
           observedCategory: catalogScope.observedCategory,
           catalogCategory: catalogScope.catalogCategory,
           status: catalogScope.status,
         },
         captureQuality: {
-          status: analysis.captureQuality.status,
+          status: input.captureQuality.status,
           warnings: combineCaptureWarnings(
-            analysis.captureQuality.warnings,
             input.metadata.warnings,
-            input.qualityWarnings,
-            input.detector?.warnings,
+            input.captureQuality.warnings,
+            filterVisualWarnings(analysis.captureQuality.warnings),
           ),
         },
         observations,
@@ -324,9 +406,6 @@ export class GrokShelfReasoner implements ShelfReasoner {
           provider: this.provider,
           model: this.model,
           promptVersion: "shelf-audit-v1",
-          ...(input.detector
-            ? { detectorVersion: input.detector.version }
-            : {}),
         },
       });
     } catch (error) {
