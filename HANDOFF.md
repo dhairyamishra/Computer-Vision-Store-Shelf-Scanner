@@ -1,5 +1,16 @@
 # Development Handoff
 
+## Recovery record — 2026-07-15
+
+`main` was restored to `13cceb6` (`feat: add Grok-powered shelf audit UI`) after a rebase/reset moved it to an older, incompatible implementation and made the browser upload UI disappear. The restored commit serves the desktop UI at `GET /`; it supports account selection, photo/video upload, image preview, and audit-result display.
+
+Both histories are intentionally protected by local branches before any further reconciliation:
+
+- `recovered-desktop-ui` → `13cceb6` (the restored current application)
+- `pre-recovery-minimal-implementation` → `436d6fc` (the replacement implementation that was previously on `main`)
+
+Do not use `git reset`, `rebase --abort`, or force-push on `main` without first creating a named backup branch and recording the before/after commit IDs here. Before any history-changing Git action, run `git status --short --branch`, preserve any working-tree changes, and update this recovery record.
+
 ## Current state
 
 Phases 0–3 are complete on `main`; Phase 4 (Grok extraction and provider abstraction) is next. The implementation plan is the authoritative progress tracker: [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md).
