@@ -74,3 +74,33 @@ The optional local generic detector is not required for the browser demo. Its sm
 ```powershell
 npm.cmd run test:detector:smoke
 ```
+
+## Sample videos
+
+Five real, messy shelf videos are included in [`data/sample-store-videos`](data/sample-store-videos). They are short handheld store-aisle captures and can be uploaded directly through the browser UI. They intentionally include movement, partial labels, varied angles, and a candy aisle so the category detection is not restricted to beverages.
+
+## Architecture and reflection
+
+### What was built
+
+This is a deliberately small browser harness around the core field-audit loop: select an account, upload a photo or video, extract representative frames, ask Grok for a structured visual reading, apply grounding rules, and persist the audit locally. I used a browser UI rather than completing the Expo client because it made the real video-to-JSON loop demonstrable within the time box; an Expo/React Native client would call the same API in production.
+
+FFmpeg extracts video frames and the application selects a quality-aware, coverage-preserving subset. Grok performs the visual reading. The application—not the model—owns schema validation, evidence references, category-to-catalog applicability, exact-SKU downgrades, capture-quality status, and the rule that an absent expected product is not automatically out of stock.
+
+### Latency and cost
+
+The largest latency and cost is the managed vision request, followed by upload for a larger video. Local frame extraction and scoring are inexpensive. For short videos, one retained frame per second is analyzed; longer videos are capped at 12 coverage/scene-change frames to bound payload and model cost. To halve latency, I would reduce the frame budget or image resolution before changing the reasoning contract. For on-device operation, I would move capture, quality scoring, and upload retry to the client, then use a smaller local model/OCR only for triage; exact product interpretation would still need a server-side catalog and policy layer.
+
+### Bad footage and trust
+
+Glare, motion blur, oblique angles, hidden labels, and nearly identical packages fail first. The audit responds with capture-quality warnings, nullable fields, evidence references, and lower confidence instead of filling unsupported details. A wrong read is caught by requiring selected-frame evidence for material claims, restricting exact SKU matches to catalog-supported visual details, and treating unreadable size/variant/price as not observable. Confidence is only useful if it is calibrated against field-level accuracy and abstention is allowed.
+
+### Offline and scale
+
+This demo processes synchronously and does not yet provide offline capture or resumable upload. A production mobile client would save the encrypted video and audit draft locally, assign an idempotency key, queue upload when connectivity returns, and show a durable pending state. At scale, I would measure SKU precision/recall by match level, field-level accuracy, OOS precision/recall, confidence calibration, abstention rate, and rep overrides. Trust comes from showing evidence and from a high-confidence claim being measurably more reliable than a medium-confidence one—not from maximizing the number of claims.
+
+### Deliberate omissions and production persistence
+
+I did not build a complete Expo client, dedicated OCR, planogram engine, background queue, offline sync, or broad retail catalog. I also intentionally used local PGlite and filesystem media rather than Supabase because this is a small runnable demo and the real extraction/grounding loop was the higher-value use of the time box.
+
+For a real product, I would use Supabase Postgres and Storage: `accounts`, `products`, and `account_assortments` would hold catalog/expected-shelf data; `audits` would store audit status, account, source-media pointer, final JSON, and model metadata; `audit_evidence` would store selected-frame pointers and scores. Private Storage would hold source videos and frames, with row-level security scoped to the account/organization. That replaces the local PGlite/media layer without changing the audit contract.

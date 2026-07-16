@@ -212,6 +212,10 @@ coverage/
 
 # Local shelf-audit runtime state
 data/
+!data/
+data/*
+!data/sample-store-videos/
+!data/sample-store-videos/*.mp4
 .cache/
 .env.*
 !.env.example
