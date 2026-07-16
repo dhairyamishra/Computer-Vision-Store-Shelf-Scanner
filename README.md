@@ -9,7 +9,9 @@ Requirements:
 - Node.js 22.16.0 (see [.nvmrc](.nvmrc))
 - An xAI API key for real Grok inference
 
-On Windows PowerShell, use `npm.cmd` rather than `npm`.
+### Windows PowerShell
+
+Use `npm.cmd` rather than `npm`:
 
 1. Install dependencies:
 
@@ -34,6 +36,21 @@ On Windows PowerShell, use `npm.cmd` rather than `npm`.
 4. Open [http://localhost:3000](http://localhost:3000). Select an account, upload a JPEG/PNG/WebP image or MP4/MOV/WebM video, and submit it for analysis. The completed audit JSON is displayed in the browser.
 
 The health check is available at [http://localhost:3000/health](http://localhost:3000/health) and returns `{ "status": "ok" }`.
+
+### macOS / Linux
+
+```bash
+npm install --include=dev
+cp .env.example .env
+```
+
+Set `XAI_API_KEY` in `.env`, then run:
+
+```bash
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000).
 
 ### Local runtime data
 
